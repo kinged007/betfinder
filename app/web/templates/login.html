@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Sports Bet Finder</title>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css" />
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <style>
+        .glass-card {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+    </style>
+</head>
+
+<body class="min-h-screen flex items-center justify-center bg-base-300">
+    <div class="card w-96 glass-card shadow-2xl">
+        <div class="card-body">
+            <h2 class="card-title text-3xl font-bold mb-4 justify-center text-primary">BetFinder</h2>
+            <p class="text-center text-base-content/70 mb-6">Enter your API Access Key to continue</p>
+
+            {% if error %}
+            <div class="alert alert-error mb-4">
+                <span>{{ error }}</span>
+            </div>
+            {% endif %}
+
+            <form action="/login" method="POST" class="space-y-4">
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text">Access Key</span>
+                    </label>
+                    <input type="password" name="password" placeholder="••••••••" class="input input-bordered"
+                        required />
+                </div>
+                <div class="card-actions justify-end mt-6">
+                    <button type="submit" class="btn btn-primary w-full shadow-lg shadow-primary/20">Login</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</body>
+
+</html>

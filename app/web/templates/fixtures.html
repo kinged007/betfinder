@@ -1,0 +1,333 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="w-full md:max-w-7xl px-0 md:px-4">
+    <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6 px-4 md:px-0">
+        <h2 class="text-xl md:text-2xl font-bold">Fixtures</h2>
+        <div class="flex items-center gap-2">
+            <!-- Filters Button for Mobile -->
+        </div>
+    </div>
+
+    <!-- Filters Section -->
+    <div class="card bg-base-100 shadow-xl mb-6">
+        <div class="card-body p-4">
+            <div class="flex flex-wrap gap-4 items-end">
+                <!-- Sports Filter -->
+                <div class="form-control w-full md:w-auto md:min-w-[200px]">
+                    <label class="label"><span class="label-text">Sports</span></label>
+                    <div class="dropdown" id="sport-dropdown">
+                        <label tabindex="0" class="btn btn-sm btn-outline w-full justify-between">
+                            <span id="sport-label">Selected: 0</span>
+                            <svg class="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M19 9l-7 7-7-7"></path>
+                            </svg>
+                        </label>
+                        <ul tabindex="0"
+                            class="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-64 max-h-60 overflow-y-scroll overscroll-contain">
+                            {% for sport in sports %}
+                            <li>
+                                <label class="label cursor-pointer justify-start gap-2">
+                                    <input type="checkbox" class="checkbox checkbox-xs sport-checkbox"
+                                        value="{{ sport.key }}" onchange="updateFilters()">
+                                    <span class="label-text text-xs">{{ sport.title }}</span>
+                                </label>
+                            </li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Bookmakers Filter -->
+                <div class="form-control w-full md:w-auto md:min-w-[200px]">
+                    <label class="label"><span class="label-text">Bookmakers</span></label>
+                    <div class="dropdown" id="bookmaker-dropdown">
+                        <label tabindex="0" class="btn btn-sm btn-outline w-full justify-between">
+                            <span id="bookmaker-label">Selected: 0</span>
+                            <svg class="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M19 9l-7 7-7-7"></path>
+                            </svg>
+                        </label>
+                        <ul tabindex="0"
+                            class="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-64 max-h-60 overflow-y-scroll overscroll-contain">
+                            {% for bm in bookmakers %}
+                            <li>
+                                <label class="label cursor-pointer justify-start gap-2">
+                                    <input type="checkbox" class="checkbox checkbox-xs bm-checkbox" value="{{ bm.key }}"
+                                        onchange="updateFilters()">
+                                    <span class="label-text text-xs">{{ bm.title }}</span>
+                                </label>
+                            </li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Leagues Filter -->
+                <div class="form-control w-full md:w-auto md:min-w-[200px]">
+                    <label class="label"><span class="label-text">Leagues</span></label>
+                    <div class="dropdown" id="league-dropdown">
+                        <label tabindex="0" class="btn btn-sm btn-outline w-full justify-between">
+                            <span id="league-label">Selected: 0</span>
+                            <svg class="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M19 9l-7 7-7-7"></path>
+                            </svg>
+                        </label>
+                        <ul tabindex="0"
+                            class="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-64 max-h-60 overflow-y-scroll overscroll-contain"
+                            id="league-list">
+                            {% for league in leagues %}
+                            <li data-sport="{{ league.sport_key }}">
+                                <label class="label cursor-pointer justify-start gap-2">
+                                    <input type="checkbox" class="checkbox checkbox-xs league-checkbox"
+                                        value="{{ league.key }}" onchange="updateFilters()">
+                                    <span class="label-text text-xs truncate">{{ league.title }}</span>
+                                </label>
+                            </li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Live Only Toggle -->
+                <div class="form-control">
+                    <label class="label cursor-pointer gap-2">
+                        <span class="label-text font-bold">Live Only</span>
+                        <input type="checkbox" class="toggle toggle-primary toggle-sm" id="live-toggle"
+                            onchange="updateFilters()" />
+                    </label>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Table Section -->
+    <div class="card bg-base-100 shadow-xl md:rounded-xl rounded-none">
+        <div class="card-body p-0 md:p-1 overflow-visible">
+            <table class="table w-full" id="events-table">
+                <thead>
+                    <tr class="bg-base-200 text-[10px] md:text-sm">
+                        <th class="px-2 md:px-4">Time</th>
+                        <th class="px-2 md:px-4">Event</th>
+                        <th class="px-2 md:px-4 hidden md:table-cell">Markets</th>
+                        <th class="px-2 md:px-4 text-center">Bookmakers</th>
+                        <th class="px-2 md:px-4 text-center">Odds</th>
+                    </tr>
+                </thead>
+                <tbody id="events-body">
+                    <tr>
+                        <td colspan="5" class="text-center py-10">
+                            <span class="loading loading-spinner loading-lg"></span>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Bookmaker Details Modal -->
+<dialog id="bm-details-modal" class="modal">
+    <div class="modal-box w-11/12 max-w-2xl">
+        <div class="flex justify-between items-start mb-4">
+            <h3 class="font-bold text-lg" id="modal-event-title">Event Details</h3>
+            <form method="dialog">
+                <button class="btn btn-sm btn-circle btn-ghost">✕</button>
+            </form>
+        </div>
+
+        <table class="table table-zebra w-full" id="bm-details-table">
+            <thead>
+                <tr>
+                    <th>Bookmaker</th>
+                    <th>Markets</th>
+                    <th class="text-center">Odds Count</th>
+                </tr>
+            </thead>
+            <tbody id="bm-details-body">
+            </tbody>
+        </table>
+    </div>
+    <form method="dialog" class="modal-backdrop">
+        <button>close</button>
+    </form>
+</dialog>
+
+<script>
+    let filterTimeout;
+
+    function updateFilters() {
+        // Debounce filter updates
+        clearTimeout(filterTimeout);
+        filterTimeout = setTimeout(loadEvents, 300);
+        updateFilterLabels();
+    }
+
+    function updateFilterLabels() {
+        // Update button texts
+        const sports = document.querySelectorAll('.sport-checkbox:checked');
+        const leagues = document.querySelectorAll('.league-checkbox:checked');
+        const bms = document.querySelectorAll('.bm-checkbox:checked');
+
+        document.getElementById('sport-label').textContent = `Selected: ${sports.length}`;
+        document.getElementById('league-label').textContent = `Selected: ${leagues.length}`;
+        document.getElementById('bookmaker-label').textContent = `Selected: ${bms.length}`;
+
+        // Filter leagues list based on selected sports
+        const selectedSportKeys = Array.from(sports).map(cb => cb.value);
+        const leagueItems = document.querySelectorAll('#league-list li');
+
+        leagueItems.forEach(item => {
+            const sportKey = item.getAttribute('data-sport');
+            if (selectedSportKeys.length === 0 || selectedSportKeys.includes(sportKey)) {
+                item.style.display = '';
+            } else {
+                item.style.display = 'none';
+                // Optional: uncheck hidden leagues?
+            }
+        });
+    }
+
+    async function loadEvents() {
+        const tbody = document.getElementById('events-body');
+        tbody.innerHTML = `<tr><td colspan="5" class="text-center py-10"><span class="loading loading-spinner loading-lg"></span></td></tr>`;
+
+        // Gather params
+        const params = new URLSearchParams();
+
+        document.querySelectorAll('.sport-checkbox:checked').forEach(cb => params.append('sports', cb.value));
+        document.querySelectorAll('.league-checkbox:checked').forEach(cb => params.append('leagues', cb.value));
+        document.querySelectorAll('.bm-checkbox:checked').forEach(cb => params.append('bookmakers', cb.value));
+
+        if (document.getElementById('live-toggle').checked) {
+            params.append('is_live', 'true');
+        }
+
+        try {
+            const response = await fetch(`/api/fixtures/list?${params.toString()}`);
+            const data = await response.json();
+
+            if (data.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" class="text-center py-10 text-gray-500">No events found matching filters.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = data.map((item, idx) => {
+                const timeHtml = window.formatLocalTime(item.start_time);
+
+                // Countdown
+                let startStr = item.start_time;
+                if (startStr && !startStr.endsWith('Z') && !startStr.includes('+')) {
+                    startStr += 'Z';
+                }
+                const d = new Date(startStr);
+                const now = new Date();
+                const diffMs = d - now;
+                const diffHours = diffMs / (1000 * 60 * 60);
+
+                let countdownLabel = "";
+                if (diffHours > 0) {
+                    if (diffHours < 1) countdownLabel = `in ${Math.floor(diffMs / (1000 * 60))}m`;
+                    else if (diffHours < 24) countdownLabel = `in ${diffHours.toFixed(0)}h`;
+                    else countdownLabel = `in ${Math.floor(diffHours / 24)}d`;
+                } else if (diffHours > -1.5) { // Assuming match lasts ~1.5h
+                    countdownLabel = `<span class="badge badge-error badge-xs animate-pulse">LIVE</span>`;
+                } else {
+                    countdownLabel = `<span class="badge badge-ghost badge-xs opacity-50">Finished</span>`;
+                }
+
+                const marketBadges = item.markets.slice(0, 3).map(m => `<span class="badge badge-xs badge-outline opacity-70 uppercase">${m}</span>`).join(' ');
+                const moreMarkets = item.markets.length > 3 ? `<span class="text-[10px] opacity-50">+${item.markets.length - 3}</span>` : '';
+
+                const itemJson = JSON.stringify(item).replace(/"/g, '&quot;');
+
+                return `
+                    <tr class="hover:bg-base-200 transition-colors border-b border-base-200">
+                         <td class="whitespace-nowrap py-3 px-2 md:px-4">
+                             <div class="flex flex-col">
+                                 <span class="text-xs font-bold">${timeHtml}</span>
+                                 <span class="text-[10px] opacity-60 font-mono">${countdownLabel}</span>
+                             </div>
+                         </td>
+                         <td class="py-3 px-2 md:px-4">
+                             <div class="flex flex-col">
+                                 <span class="font-bold text-sm">${item.home}</span>
+                                 <span class="font-bold text-sm opacity-70">${item.away}</span>
+                                 <div class="flex items-center gap-2 mt-1">
+                                    <span class="text-[10px] uppercase font-bold text-primary/70 tracking-wider">${item.sport}</span>
+                                    <span class="text-[10px] opacity-40">•</span>
+                                    <span class="text-[10px] opacity-60">${item.league}</span>
+                                 </div>
+                             </div>
+                         </td>
+                         <td class="hidden md:table-cell py-3 px-2 md:px-4">
+                             <div class="flex flex-wrap gap-1">
+                                 ${marketBadges} ${moreMarkets}
+                             </div>
+                         </td>
+                         <td class="text-center py-3 px-2 md:px-4 cursor-pointer hover:bg-base-300 rounded" onclick='openBookmakerModal("${item.id}", "${item.home} vs ${item.away}")'>
+                             <span class="badge badge-primary badge-lg font-bold">${item.bookmaker_count}</span>
+                             <div class="text-[9px] opacity-50 mt-1 uppercase tracking-wider">Bookies</div>
+                         </td>
+                         <td class="text-center py-3 px-2 md:px-4">
+                             <div class="font-mono text-lg font-bold opacity-80">${item.odds_count}</div>
+                             <div class="text-[9px] opacity-50 uppercase tracking-wider">Odds</div>
+                         </td>
+                    </tr>
+                `;
+            }).join('');
+
+        } catch (e) {
+            console.error(e);
+            tbody.innerHTML = `<tr><td colspan="5" class="text-center py-10 text-error">Failed to load events.</td></tr>`;
+        }
+    }
+
+    async function openBookmakerModal(eventId, title) {
+        document.getElementById('modal-event-title').textContent = title;
+        document.getElementById('bm-details-modal').showModal();
+
+        const tbody = document.getElementById('bm-details-body');
+        tbody.innerHTML = `<tr><td colspan="3" class="text-center py-4"><span class="loading loading-spinner"></span></td></tr>`;
+
+        try {
+            const response = await fetch(`/api/events/${eventId}/bookmakers`);
+            const data = await response.json();
+
+            if (data.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="3" class="text-center py-4 opacity-50">No data found.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = data.map(bm => `
+                <tr>
+                    <td class="font-bold">${bm.name}</td>
+                    <td>
+                        <div class="flex flex-wrap gap-1">
+                            ${bm.markets.map(m => `<span class="badge badge-xs badge-neutral uppercase">${m}</span>`).join('')}
+                        </div>
+                    </td>
+                    <td class="text-center font-mono font-bold">${bm.odds_count}</td>
+                </tr>
+            `).join('');
+
+        } catch (e) {
+            tbody.innerHTML = `<tr><td colspan="3" class="text-center py-4 text-error">Error loading details.</td></tr>`;
+        }
+    }
+
+    // Initial Load
+    document.addEventListener('DOMContentLoaded', loadEvents);
+
+    // Re-use standard time formatter if available or define basic one
+    if (!window.formatLocalTime) {
+        window.formatLocalTime = function (isoStr) {
+            const d = new Date(isoStr);
+            return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        };
+    }
+</script>
+{% endblock %}

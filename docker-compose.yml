@@ -1,0 +1,56 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: betfinder-db
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-betfinder}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-betfinder}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  migrate:
+    build: .
+    container_name: betfinder-migrate
+    command: alembic upgrade head
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-betfinder}
+    volumes:
+      - ./.env:/app/.env:ro
+
+  app:
+    build: .
+    container_name: betfinder-app
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-betfinder}
+      - ENVIRONMENT=production
+      - API_ACCESS_KEY=${API_ACCESS_KEY}
+      - SECRET_KEY=${SECRET_KEY}
+      - THE_ODDS_API_KEY=${THE_ODDS_API_KEY}
+      - THE_ODDS_API_REGIONS=${THE_ODDS_API_REGIONS:-eu,us,uk}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - PRESET_SYNC_INTERVAL_HOURS=${PRESET_SYNC_INTERVAL_HOURS:-6}
+    volumes:
+      - ./.env:/app/.env:ro
+
+volumes:
+  postgres_data:

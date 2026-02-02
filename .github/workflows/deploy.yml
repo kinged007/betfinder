@@ -1,0 +1,79 @@
+name: Deploy to Google Cloud Run
+
+on:
+  push:
+    branches:
+      - main  # Change this to your default branch
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  REGION: ${{ secrets.GCP_REGION }}
+  SERVICE_NAME: betfinder
+  REPOSITORY: betfinder-repo # The name of your Artifact Registry repository
+  IMAGE_NAME: betfinder-app
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Google Auth
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker
+        run: |
+          gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - name: Build and Push Container
+        run: |
+          DOCKER_TAG="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          docker build -t $DOCKER_TAG .
+          docker push $DOCKER_TAG
+          echo "IMAGE_TAG=$DOCKER_TAG" >> $GITHUB_ENV
+
+      - name: Run Database Migrations
+        run: |
+          # This runs a one-off Cloud Run Job to handle migrations
+          # It uses the same image but overrides the entrypoint to run alembic
+          gcloud run jobs deploy migrate-job \
+            --image ${{ env.IMAGE_TAG }} \
+            --command "alembic" \
+            --args "upgrade","head" \
+            --region ${{ env.REGION }} \
+            --set-env-vars "DATABASE_URL=${{ secrets.DATABASE_URL }}" \
+            --quiet
+          
+          gcloud run jobs execute migrate-job --region ${{ env.REGION }} --wait
+
+      - name: Deploy to Cloud Run
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ env.SERVICE_NAME }}
+          region: ${{ env.REGION }}
+          image: ${{ env.IMAGE_TAG }}
+          env_vars: |
+            ENVIRONMENT=production
+            DATABASE_URL=${{ secrets.DATABASE_URL }}
+            API_ACCESS_KEY=${{ secrets.API_ACCESS_KEY }}
+            SECRET_KEY=${{ secrets.SECRET_KEY }}
+            THE_ODDS_API_KEY=${{ secrets.THE_ODDS_API_KEY }}
+            THE_ODDS_API_REGIONS=${{ secrets.THE_ODDS_API_REGIONS }}
+            TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
+            TELEGRAM_CHAT_ID=${{ secrets.TELEGRAM_CHAT_ID }}
+            LOG_LEVEL=${{ secrets.LOG_LEVEL }}
+            PRESET_SYNC_INTERVAL_HOURS=${{ secrets.PRESET_SYNC_INTERVAL_HOURS }}
+
+      - name: Show Output
+        run: echo "Deployment complete!"

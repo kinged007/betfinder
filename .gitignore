@@ -1,0 +1,28 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+
+# secrets
+.env
+
+# logs
+logs
+
+# alembic
+alembic
+
+# database
+*.sqlite
+*.db
+
+
+# Inno Setup generated script
+betfinder_installer.iss

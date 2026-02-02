@@ -1,0 +1,53 @@
+name: Build Tray App
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build for ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: "pyproject.toml"
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Install Inno Setup (Windows)
+        if: runner.os == 'Windows'
+        run: choco install innosetup
+
+      - name: Build App
+        run: uv run build
+
+      - name: Build Installer (Windows)
+        if: runner.os == 'Windows'
+        run: uv run installer
+      
+      - name: Archive artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: betfinder-${{ runner.os }}
+          path: |
+            dist/v*/**/BetFinderApp
+            dist/v*/**/*.app
+            dist/v*/**/*.exe

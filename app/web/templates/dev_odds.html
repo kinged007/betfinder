@@ -1,0 +1,223 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mx-auto p-4">
+    <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+        <div>
+            <h1 class="text-3xl font-bold">{{ title }}</h1>
+            <p class="text-sm opacity-70">Development view for exploring and refreshing odds data.</p>
+        </div>
+        <div class="flex gap-2">
+            <a href="/" class="btn btn-outline btn-sm">Dashboard</a>
+            <a href="/dev/events" class="btn btn-outline btn-sm">View Events</a>
+        </div>
+    </div>
+
+    <!-- Filters Bar -->
+    <div class="bg-base-200 p-4 rounded-xl mb-6 shadow-sm border border-base-300">
+        <form method="GET" action="/dev/odds" class="flex flex-wrap items-end gap-4">
+            <div class="form-control">
+                <label class="label"><span class="label-text font-semibold">Bookmaker</span></label>
+                <select name="bookmaker_id" class="select select-bordered select-sm w-full max-w-xs"
+                    onchange="this.form.submit()">
+                    <option value="">All Bookmakers</option>
+                    {% for bm in bookmakers %}
+                    <option value="{{ bm.id }}" {% if current_bookmaker_id==bm.id %}selected{% endif %}>
+                        {{ bm.title }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-control">
+                <label class="label cursor-pointer justify-start gap-4">
+                    <span class="label-text font-semibold">Future Only (+120m)</span>
+                    <input type="checkbox" name="future_only" class="checkbox checkbox-primary checkbox-sm" value="1" {%
+                        if future_only %}checked{% endif %} onchange="this.form.submit()" />
+                </label>
+            </div>
+
+            <div class="flex-grow"></div>
+
+            {% if can_fetch %}
+            <button type="button" id="fetch_live_btn" class="btn btn-primary btn-sm gap-2" onclick="triggerLiveFetch()">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+                    stroke="currentColor" class="w-4 h-4">
+                    <path stroke-linecap="round" stroke-linejoin="round"
+                        d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
+                </svg>
+                Fetch Live Odds
+            </button>
+            {% endif %}
+        </form>
+    </div>
+
+    <div class="overflow-x-auto bg-base-100 rounded-lg shadow border border-base-300">
+        <table class="table table-zebra w-full table-sm">
+            <thead class="bg-base-200 sticky top-0 z-10">
+                <tr>
+                    {% for header in headers %}
+                    <th class="py-3 uppercase text-[10px] font-bold">{{ header }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in rows %}
+                <tr class="hover group">
+                    <td class="text-xs opacity-50 font-mono">{{ item.id }}</td>
+                    <td class="max-w-[200px]">
+                        <div class="font-bold text-xs truncate">{{ item.game }}</div>
+                        <div class="text-[10px] opacity-60 local-time" data-utc-time="{{ item.start_time }}"></div>
+                    </td>
+                    <td class="text-[10px] opacity-50 uppercase font-mono">{{ item.sport }}</td>
+                    <td class="text-[10px] font-medium opacity-70">{{ item.market }}</td>
+                    <td>
+                        <div class="font-bold text-xs text-primary">{{ item.selection }}</div>
+                        <div class="text-[9px] opacity-40 uppercase font-mono">{{ item.selection_norm }}</div>
+                    </td>
+                    <td>
+                        <span class="badge badge-outline badge-xs">{{ item.bookie }}</span>
+                    </td>
+                    <td class="font-mono font-bold text-accent">{{ "%.2f"|format(item.price) }}</td>
+                    <td class="font-mono text-xs opacity-70">
+                        {% if item.point is not none %}
+                        {{ '+' if item.point > 0 else '' }}{{ item.point }}
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
+                    <td class="text-[10px] opacity-50">{{ item.prob or '-' }}</td>
+                    <td class="text-[10px] font-bold">{{ item.true_odds or '-' }}</td>
+                    <td
+                        class="text-sm font-bold {% if item.edge and item.edge > 0 %}text-success{% elif item.edge %}text-error{% endif %}">
+                        {{ item.edge or '-' }}{% if item.edge %}%{% endif %}
+                    </td>
+                    <td>
+                        <button class="btn btn-xs btn-primary opacity-0 group-hover:opacity-100 transition-opacity"
+                            onclick="quickBet({{ item.id }}, this)">
+                            Bet 10€
+                        </button>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="{{ headers|length }}" class="text-center py-20 opacity-50 italic text-sm">
+                        No odds matching the current filters.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Modal for Logs -->
+<dialog id="log_modal" class="modal">
+    <div class="modal-box w-11/12 max-w-5xl">
+        <h3 class="font-bold text-lg mb-4 flex items-center gap-2">
+            <span class="loading loading-ring loading-sm hidden" id="fetch_loader"></span>
+            Live Fetch Logs
+        </h3>
+        <div class="bg-black text-green-400 p-4 rounded-lg overflow-auto max-h-[60vh] font-mono text-xs">
+            <pre id="log_content" class="whitespace-pre-wrap">Initializing fetch...</pre>
+        </div>
+        <div class="modal-action">
+            <form method="dialog">
+                <button class="btn btn-sm" onclick="window.location.reload()">Close & Refresh Page</button>
+            </form>
+        </div>
+    </div>
+</dialog>
+
+<script>
+    async function quickBet(oddId, btn) {
+        const originalText = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = '...';
+
+        try {
+            const response = await fetch('/dev/odds/quick-bet', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ odd_id: oddId })
+            });
+
+            if (response.ok) {
+                btn.textContent = '✓';
+                btn.classList.replace('btn-primary', 'btn-success');
+                showToast('Bet placed successfully (10€)', 'success');
+            } else {
+                const err = await response.json();
+                showToast(`Error: ${err.detail || 'Failed to place bet'}`, 'error');
+                btn.disabled = false;
+                btn.textContent = originalText;
+            }
+        } catch (e) {
+            console.error(e);
+            showToast('Connection error', 'error');
+            btn.disabled = false;
+            btn.textContent = originalText;
+        }
+    }
+
+    async function triggerLiveFetch() {
+        const modal = document.getElementById('log_modal');
+        const content = document.getElementById('log_content');
+        const loader = document.getElementById('fetch_loader');
+        const btn = document.getElementById('fetch_live_btn');
+
+        modal.showModal();
+        loader.classList.remove('hidden');
+        btn.disabled = true;
+        content.textContent = "Starting trigger...\n";
+
+        const bookmakerId = "{{ current_bookmaker_id }}";
+        const futureOnly = "{{ 'true' if future_only else 'false' }}";
+
+        try {
+            const response = await fetch('/dev/odds/fetch-live', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    bookmaker_id: parseInt(bookmakerId),
+                    future_only: futureOnly === "true"
+                })
+            });
+
+            const data = await response.json();
+
+            if (data.status === 'success') {
+                content.textContent += "\n--- SUCCESS ---\n";
+            } else {
+                content.textContent += "\n--- ERROR ---\n" + (data.message || 'Unknown error');
+                content.classList.replace('text-green-400', 'text-red-400');
+            }
+
+            if (data.logs) {
+                content.textContent += "\n" + data.logs.join("\n");
+            }
+
+        } catch (err) {
+            content.textContent += "\nFAILED TO CONNECT: " + err.message;
+            content.classList.replace('text-green-400', 'text-red-400');
+        } finally {
+            loader.classList.add('hidden');
+            btn.disabled = false;
+        }
+    }
+
+
+
+    function renderLocalTimes() {
+        document.querySelectorAll('.local-time').forEach(el => {
+            const utc = el.dataset.utcTime;
+            if (!utc) return;
+            el.innerHTML = window.formatLocalTime(utc, {
+                month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+            });
+        });
+    }
+
+    document.addEventListener('DOMContentLoaded', renderLocalTimes);
+</script>
+{% endblock %}

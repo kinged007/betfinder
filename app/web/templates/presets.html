@@ -1,0 +1,818 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 w-full px-2">
+    <h1 class="text-3xl font-bold">Presets</h1>
+    <button class="btn btn-primary btn-sm sm:btn-md" onclick="openCreateModal()">Add Preset</button>
+</div>
+
+<div class="overflow-x-auto w-full">
+    <table class="table table-zebra table-xs md:table-sm">
+        <thead>
+            <tr>
+                <th class="hidden sm:table-cell">ID</th>
+                <th>Name</th>
+                <th class="hidden md:table-cell">Active</th>
+                <th>Sports</th>
+                <th class="hidden lg:table-cell">Criteria</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for preset in presets %}
+            <tr class="hover cursor-pointer" onclick='openEditModal({{ preset | tojson }})'>
+                <td class="hidden sm:table-cell">{{ preset.id }}</td>
+                <td>
+                    <div class="font-bold">{{ preset.name }}</div>
+                    <div class="md:hidden">
+                        {% if preset.active %}
+                        <span class="badge badge-success badge-xs">Active</span>
+                        {% else %}
+                        <span class="badge badge-ghost badge-xs">Inactive</span>
+                        {% endif %}
+                    </div>
+                </td>
+                <td class="hidden md:table-cell">
+                    {% if preset.active %}
+                    <span class="badge badge-success">Active</span>
+                    {% else %}
+                    <span class="badge badge-ghost">Inactive</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <div class="tooltip" data-tip="{{ preset.sports | join(', ') }}">
+                        <span class="text-xs">{{ preset.sports[:2] | join(', ') }}{% if preset.sports|length > 2 %}...{%
+                            endif %}</span>
+                    </div>
+                </td>
+                <td class="hidden lg:table-cell">
+                    <div class="text-xs">
+                        <div>Odds: {{ preset.min_odds or 0 }} - {{ preset.max_odds or '∞' }}</div>
+                        <div>Edge: {{ preset.min_edge or 0 }}% - {{ preset.max_edge or '∞' }}%</div>
+                    </div>
+                </td>
+                <td>
+                    <div class="flex gap-1 md:gap-2">
+                        <button class="btn btn-xs btn-outline btn-info">Edit</button>
+                        <a href="/trade-feed?preset_id={{ preset.id }}" class="btn btn-xs btn-outline btn-success"
+                            onclick="event.stopPropagation();">Tradefeed</a>
+                    </div>
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="6" class="text-center py-10">No presets found.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<!-- Add/Edit Preset Modal -->
+<dialog id="preset_modal" class="modal">
+    <div class="modal-box w-11/12 max-w-6xl">
+        <h3 id="modal-title" class="font-bold text-xl mb-6">Create New Preset</h3>
+
+        <form id="createPresetForm" method="dialog" class="space-y-6">
+            <!-- Name and Active Toggle -->
+            <div class="grid grid-cols-1 md:grid-cols-8 gap-4 items-center">
+                <div class="form-control md:col-span-2">
+                    <label class="label"><span class="label-text font-semibold">Preset Name</span></label>
+                    <input type="text" name="name" class="input input-bordered" required
+                        placeholder="e.g., NBA High Edge" />
+                </div>
+                <div class="hidden md:block"></div>
+                <div class="hidden md:block"></div>
+                <div class="hidden md:block"></div>
+                <div class="form-control">
+                    <label class="label"><span class="label-text font-semibold">Status</span></label><br />
+                    <label class="label cursor-pointer justify-start gap-3 bg-base-200 rounded-lg p-3">
+                        <input type="checkbox" name="active" class="toggle toggle-success" checked />
+                        <span class="label-text">Active</span>
+                    </label>
+                </div>
+                <div class="form-control">
+                    <label class="label"><span class="label-text font-semibold">Auto-Trade</span></label><br />
+                    <label class="label cursor-pointer justify-start gap-3 bg-base-200 rounded-lg p-3">
+                        <input type="checkbox" name="auto_trade" class="toggle toggle-primary" />
+                        <span class="label-text">Enabled</span>
+                    </label>
+                </div>
+                <div class="form-control">
+                    <label class="label"><span class="label-text font-semibold">Benchmarks</span></label><br />
+                    <label class="label cursor-pointer justify-start gap-3 bg-base-200 rounded-lg p-3">
+                        <input type="checkbox" name="ignore_benchmarks" class="toggle toggle-warning" />
+                        <span class="label-text">Ignore</span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="divider my-2"></div>
+
+            <!-- Main Selection Grid: Sports/Leagues | Bookmakers/Markets -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <!-- Left Column: Sports & Leagues -->
+                <div class="space-y-4">
+                    <!-- Sports Multi-Select -->
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text font-semibold">Sports</span>
+                            <span class="label-text-alt" id="sports-count">0 selected</span>
+                        </label>
+                        <div class="dropdown dropdown-bottom w-full">
+                            <label tabindex="0" class="btn btn-outline w-full justify-between normal-case">
+                                <span id="sports-display">Select sports...</span>
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M19 9l-7 7-7-7"></path>
+                                </svg>
+                            </label>
+                            <div tabindex="0"
+                                class="dropdown-content z-[1] card card-compact w-full p-2 shadow bg-base-100 border border-base-300 mt-1">
+                                <div class="card-body p-2">
+                                    <input type="text" placeholder="Search sports..."
+                                        class="input input-bordered input-sm mb-2" id="sports-search"
+                                        onkeyup="filterDropdown('sports')">
+                                    <div class="max-h-60 overflow-y-auto space-y-1" id="sports-list">
+                                        {% for sport in sports %}
+                                        <label
+                                            class="label cursor-pointer justify-start gap-2 hover:bg-base-200 rounded px-2 py-1">
+                                            <input type="checkbox" name="sports" value="{{ sport.key }}"
+                                                class="checkbox checkbox-sm"
+                                                onchange="updateSportsDisplay(); filterLeagues()">
+                                            <span class="label-text">{{ sport.title }}</span>
+                                        </label>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Show All Leagues Toggle -->
+                    <div class="form-control">
+                        <label class="label cursor-pointer justify-start gap-3">
+                            <input type="checkbox" name="show_all_leagues" class="toggle toggle-sm"
+                                onchange="toggleLeagues()" />
+                            <span class="label-text">Show All Leagues (no filter)</span>
+                        </label>
+                    </div>
+
+                    <!-- Leagues Multi-Select -->
+                    <div id="leagues-container" class="form-control">
+                        <label class="label">
+                            <span class="label-text font-semibold">Leagues</span>
+                            <span class="label-text-alt" id="leagues-count">0 selected</span>
+                        </label>
+                        <div class="dropdown dropdown-bottom w-full">
+                            <label tabindex="0" class="btn btn-outline w-full justify-between normal-case">
+                                <span id="leagues-display">Select leagues...</span>
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M19 9l-7 7-7-7"></path>
+                                </svg>
+                            </label>
+                            <div tabindex="0"
+                                class="dropdown-content z-[1] card card-compact w-full p-2 shadow bg-base-100 border border-base-300 mt-1">
+                                <div class="card-body p-2">
+                                    <input type="text" placeholder="Search leagues..."
+                                        class="input input-bordered input-sm mb-2" id="leagues-search"
+                                        onkeyup="filterDropdown('leagues')">
+                                    <div class="max-h-60 overflow-y-auto space-y-1" id="leagues-list">
+                                        {% for league in leagues %}
+                                        <label
+                                            class="label cursor-pointer justify-start gap-2 hover:bg-base-200 rounded px-2 py-1"
+                                            data-sport="{{ league.sport_key }}">
+                                            <input type="checkbox" name="leagues" value="{{ league.key }}"
+                                                class="checkbox checkbox-sm" onchange="updateLeaguesDisplay()">
+                                            <span class="label-text">{{ league.title }}</span>
+                                        </label>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Column: Bookmakers & Markets -->
+                <div class="space-y-4">
+                    <!-- Bookmakers Multi-Select -->
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text font-semibold">Bookmakers</span>
+                            <span class="label-text-alt" id="bookmakers-count">0 selected</span>
+                        </label>
+                        <div class="dropdown dropdown-bottom w-full">
+                            <label tabindex="0" class="btn btn-outline w-full justify-between normal-case">
+                                <span id="bookmakers-display">Select bookmakers...</span>
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M19 9l-7 7-7-7"></path>
+                                </svg>
+                            </label>
+                            <div tabindex="0"
+                                class="dropdown-content z-[1] card card-compact w-full p-2 shadow bg-base-100 border border-base-300 mt-1">
+                                <div class="card-body p-2">
+                                    <input type="text" placeholder="Search bookmakers..."
+                                        class="input input-bordered input-sm mb-2" id="bookmakers-search"
+                                        onkeyup="filterDropdown('bookmakers')">
+                                    <div class="max-h-60 overflow-y-auto space-y-1" id="bookmakers-list">
+                                        {% for bm in bookmakers %}
+                                        <label
+                                            class="label cursor-pointer justify-start gap-2 hover:bg-base-200 rounded px-2 py-1">
+                                            <input type="checkbox" name="bookmakers" value="{{ bm.key }}"
+                                                class="checkbox checkbox-sm" onchange="updateBookmakersDisplay()">
+                                            <span class="label-text">{{ bm.title }}</span>
+                                        </label>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Markets Multi-Select -->
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text font-semibold">Markets</span>
+                            <span class="label-text-alt" id="markets-count">0 selected</span>
+                        </label>
+                        <div class="dropdown dropdown-bottom w-full">
+                            <label tabindex="0" class="btn btn-outline w-full justify-between normal-case">
+                                <span id="markets-display">Select markets...</span>
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M19 9l-7 7-7-7"></path>
+                                </svg>
+                            </label>
+                            <div tabindex="0"
+                                class="dropdown-content z-[1] card card-compact w-full p-2 shadow bg-base-100 border border-base-300 mt-1">
+                                <div class="card-body p-2">
+                                    <div class="max-h-48 overflow-y-auto space-y-1" id="markets-list">
+                                        <label
+                                            class="label cursor-pointer justify-start gap-2 hover:bg-base-200 rounded px-2 py-1">
+                                            <input type="checkbox" name="markets" value="h2h"
+                                                class="checkbox checkbox-sm" checked onchange="updateMarketsDisplay()">
+                                            <span class="label-text">Head to Head (Moneyline)</span>
+                                        </label>
+                                        <label
+                                            class="label cursor-pointer justify-start gap-2 hover:bg-base-200 rounded px-2 py-1">
+                                            <input type="checkbox" name="markets" value="spreads"
+                                                class="checkbox checkbox-sm" onchange="updateMarketsDisplay()">
+                                            <span class="label-text">Spreads</span>
+                                        </label>
+                                        <label
+                                            class="label cursor-pointer justify-start gap-2 hover:bg-base-200 rounded px-2 py-1">
+                                            <input type="checkbox" name="markets" value="totals"
+                                                class="checkbox checkbox-sm" onchange="updateMarketsDisplay()">
+                                            <span class="label-text">Totals (Over/Under)</span>
+                                        </label>
+                                        <label
+                                            class="label cursor-pointer justify-start gap-2 hover:bg-base-200 rounded px-2 py-1">
+                                            <input type="checkbox" name="markets" value="outrights"
+                                                class="checkbox checkbox-sm" onchange="updateMarketsDisplay()">
+                                            <span class="label-text">Outrights</span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Selections Multi-Select -->
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text font-semibold">Selections</span>
+                            <span class="label-text-alt" id="selections-count">0 selected</span>
+                        </label>
+                        <div class="dropdown dropdown-bottom w-full">
+                            <label tabindex="0" class="btn btn-outline w-full justify-between normal-case">
+                                <span id="selections-display">All selections...</span>
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M19 9l-7 7-7-7"></path>
+                                </svg>
+                            </label>
+                            <div tabindex="0"
+                                class="dropdown-content z-[1] card card-compact w-full p-2 shadow bg-base-100 border border-base-300 mt-1">
+                                <div class="card-body p-2">
+                                    <div class="max-h-48 overflow-y-auto space-y-1" id="selections-list">
+                                        <label
+                                            class="label cursor-pointer justify-start gap-2 hover:bg-base-200 rounded px-2 py-1">
+                                            <input type="checkbox" name="selections" value="home"
+                                                class="checkbox checkbox-sm" onchange="updateSelectionsDisplay()">
+                                            <span class="label-text">Home</span>
+                                        </label>
+                                        <label
+                                            class="label cursor-pointer justify-start gap-2 hover:bg-base-200 rounded px-2 py-1">
+                                            <input type="checkbox" name="selections" value="away"
+                                                class="checkbox checkbox-sm" onchange="updateSelectionsDisplay()">
+                                            <span class="label-text">Away</span>
+                                        </label>
+                                        <label
+                                            class="label cursor-pointer justify-start gap-2 hover:bg-base-200 rounded px-2 py-1">
+                                            <input type="checkbox" name="selections" value="draw"
+                                                class="checkbox checkbox-sm" onchange="updateSelectionsDisplay()">
+                                            <span class="label-text">Draw</span>
+                                        </label>
+                                        <label
+                                            class="label cursor-pointer justify-start gap-2 hover:bg-base-200 rounded px-2 py-1">
+                                            <input type="checkbox" name="selections" value="over"
+                                                class="checkbox checkbox-sm" onchange="updateSelectionsDisplay()">
+                                            <span class="label-text">Over</span>
+                                        </label>
+                                        <label
+                                            class="label cursor-pointer justify-start gap-2 hover:bg-base-200 rounded px-2 py-1">
+                                            <input type="checkbox" name="selections" value="under"
+                                                class="checkbox checkbox-sm" onchange="updateSelectionsDisplay()">
+                                            <span class="label-text">Under</span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="divider my-2"></div>
+
+            <!-- Comparison Figures Section -->
+            <div class="space-y-4">
+                <h4 class="font-semibold">Filters & Criteria</h4>
+
+                <!-- Odds, Edge, & Probability Range -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <!-- Odds Range -->
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Odds</span></label>
+                        <div class="join w-full">
+                            <span class="join-item btn btn-sm btn-disabled">From</span>
+                            <input type="number" step="0.01" name="min_odds"
+                                class="join-item input input-bordered input-sm flex-1" placeholder="1.50" />
+                            <span class="join-item btn btn-sm btn-disabled">To</span>
+                            <input type="number" step="0.01" name="max_odds"
+                                class="join-item input input-bordered input-sm flex-1" placeholder="5.00" />
+                        </div>
+                    </div>
+
+                    <!-- Edge Range -->
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Edge</span></label>
+                        <div class="join w-full">
+                            <span class="join-item btn btn-sm btn-disabled">From</span>
+                            <input type="number" step="0.1" name="min_edge"
+                                class="join-item input input-bordered input-sm flex-1" placeholder="2.0" />
+                            <span class="join-item btn btn-sm btn-disabled">To</span>
+                            <input type="number" step="0.1" name="max_edge"
+                                class="join-item input input-bordered input-sm flex-1" placeholder="15.0" />
+                            <span class="join-item btn btn-sm btn-disabled">%</span>
+                        </div>
+                    </div>
+
+                    <!-- Probability Range -->
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Probability</span></label>
+                        <div class="join w-full">
+                            <span class="join-item btn btn-sm btn-disabled">Min</span>
+                            <input type="number" step="0.1" name="min_probability"
+                                class="join-item input input-bordered input-sm flex-1" placeholder="0" />
+                            <span class="join-item btn btn-sm btn-disabled">Max</span>
+                            <input type="number" step="0.1" name="max_probability"
+                                class="join-item input input-bordered input-sm flex-1" placeholder="100" />
+                            <span class="join-item btn btn-sm btn-disabled">%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Game State & Time Window -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Game State</span></label>
+                        <div class="flex gap-4 bg-base-200 rounded-lg p-3">
+                            <label class="label cursor-pointer gap-2">
+                                <input type="radio" name="is_live" value="false" class="radio radio-sm" checked
+                                    onclick="toggleTimeWindow(true)" />
+                                <span class="label-text">Pre-Game</span>
+                            </label>
+                            <label class="label cursor-pointer gap-2">
+                                <input type="radio" name="is_live" value="true" class="radio radio-sm"
+                                    onclick="toggleTimeWindow(false)" />
+                                <span class="label-text">Live</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div id="time-window-container" class="md:col-span-2">
+                        <label class="label"><span class="label-text">Hours Before Game</span></label>
+                        <div class="join w-full">
+                            <span class="join-item btn btn-sm btn-disabled">Min</span>
+                            <input type="number" name="hours_before_min"
+                                class="join-item input input-bordered input-sm flex-1" value="0" placeholder="0" />
+                            <span class="join-item btn btn-sm btn-disabled">Max</span>
+                            <input type="number" name="hours_before_max"
+                                class="join-item input input-bordered input-sm flex-1" value="48" placeholder="48" />
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Trading Settings -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">Default Stake (EUR)</span></label>
+                        <input type="number" step="1" name="default_stake" class="input input-bordered input-sm"
+                            value="10" placeholder="10" />
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text">After Trade Action</span></label>
+                        <select name="after_trade_action" class="select select-bordered select-sm">
+                            <option value="keep">Keep in Feed</option>
+                            <option value="remove_trade">Remove this Trade</option>
+                            <option value="remove_match">Remove all for Match</option>
+                            <option value="remove_line">Remove all on Line</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Other Config (Dynamic from Schema) -->
+                {% if other_config_schema %}
+                <div class="divider my-2"></div>
+                <div class="space-y-4">
+                    <h4 class="font-semibold">Other Configuration</h4>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {% for field in other_config_schema %}
+                        <div class="form-control">
+                            <label class="label"><span class="label-text">{{ field.label }}</span></label>
+                            {% if field.type == 'select' %}
+                            <select name="other_config_{{ field.key }}" class="select select-bordered select-sm"
+                                data-other-config="true" data-key="{{ field.key }}">
+                                {% for opt in field.options %}
+                                <option value="{{ opt.value }}" {% if field.default==opt.value %}selected{% endif %}>{{
+                                    opt.label }}</option>
+                                {% endfor %}
+                            </select>
+                            {% elif field.type == 'text' %}
+                            <input type="text" name="other_config_{{ field.key }}" class="input input-bordered input-sm"
+                                data-other-config="true" data-key="{{ field.key }}" value="{{ field.default or '' }}" />
+                            {% elif field.type == 'number' %}
+                            <input type="number" name="other_config_{{ field.key }}"
+                                class="input input-bordered input-sm" data-other-config="true"
+                                data-key="{{ field.key }}" value="{{ field.default or '' }}" />
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+
+            <input type="hidden" id="edit_preset_id" name="id" value="" />
+
+            <!-- Modal Actions -->
+            <div class="modal-action flex justify-between items-center w-full pt-4 border-t border-base-300">
+                <div>
+                    <button type="button" id="modal-delete-btn" class="btn btn-error hidden"
+                        onclick="deletePreset(document.getElementById('edit_preset_id').value)">
+                        Delete
+                    </button>
+                </div>
+                <div class="flex gap-3">
+                    <button type="button" class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+                    <button type="button" id="submit-btn" class="btn btn-primary"
+                        onclick="submitPreset()">Create</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</dialog>
+
+<script>
+    // Multi-select dropdown display update functions
+    function updateSportsDisplay() {
+        const checkboxes = document.querySelectorAll('input[name="sports"]:checked');
+        const count = checkboxes.length;
+        const display = document.getElementById('sports-display');
+        const countLabel = document.getElementById('sports-count');
+
+        if (count === 0) {
+            display.textContent = 'Select sports...';
+        } else if (count === 1) {
+            display.textContent = checkboxes[0].nextElementSibling.textContent;
+        } else {
+            display.textContent = `${count} sports selected`;
+        }
+        countLabel.textContent = `${count} selected`;
+    }
+
+    function updateLeaguesDisplay() {
+        const checkboxes = document.querySelectorAll('input[name="leagues"]:checked');
+        const count = checkboxes.length;
+        const display = document.getElementById('leagues-display');
+        const countLabel = document.getElementById('leagues-count');
+
+        if (count === 0) {
+            display.textContent = 'Select leagues...';
+        } else if (count === 1) {
+            display.textContent = checkboxes[0].nextElementSibling.textContent;
+        } else {
+            display.textContent = `${count} leagues selected`;
+        }
+        countLabel.textContent = `${count} selected`;
+    }
+
+    function updateBookmakersDisplay() {
+        const checkboxes = document.querySelectorAll('input[name="bookmakers"]:checked');
+        const count = checkboxes.length;
+        const display = document.getElementById('bookmakers-display');
+        const countLabel = document.getElementById('bookmakers-count');
+
+        if (count === 0) {
+            display.textContent = 'Select bookmakers...';
+        } else if (count === 1) {
+            display.textContent = checkboxes[0].nextElementSibling.textContent;
+        } else {
+            display.textContent = `${count} bookmakers selected`;
+        }
+        countLabel.textContent = `${count} selected`;
+    }
+
+    function updateMarketsDisplay() {
+        const checkboxes = document.querySelectorAll('input[name="markets"]:checked');
+        const count = checkboxes.length;
+        const display = document.getElementById('markets-display');
+        const countLabel = document.getElementById('markets-count');
+
+        if (count === 0) {
+            display.textContent = 'Select markets...';
+        } else if (count === 1) {
+            display.textContent = checkboxes[0].nextElementSibling.textContent;
+        } else {
+            display.textContent = `${count} markets selected`;
+        }
+        countLabel.textContent = `${count} selected`;
+    }
+
+    function updateSelectionsDisplay() {
+        const checkboxes = document.querySelectorAll('input[name="selections"]:checked');
+        const count = checkboxes.length;
+        const display = document.getElementById('selections-display');
+        const countLabel = document.getElementById('selections-count');
+
+        if (count === 0) {
+            display.textContent = 'All selections...';
+        } else if (count === 1) {
+            display.textContent = checkboxes[0].nextElementSibling.textContent;
+        } else {
+            display.textContent = `${count} selections selected`;
+        }
+        countLabel.textContent = `${count} selected`;
+    }
+
+    // Search filter for dropdowns
+    function filterDropdown(type) {
+        const searchInput = document.getElementById(`${type}-search`);
+        const searchTerm = searchInput.value.toLowerCase();
+        const list = document.getElementById(`${type}-list`);
+        const labels = list.querySelectorAll('label');
+
+        labels.forEach(label => {
+            const text = label.textContent.toLowerCase();
+            if (text.includes(searchTerm)) {
+                label.style.display = '';
+            } else {
+                label.style.display = 'none';
+            }
+        });
+    }
+
+    function toggleLeagues() {
+        const showAll = document.querySelector('input[name="show_all_leagues"]').checked;
+        const container = document.getElementById('leagues-container');
+        if (showAll) {
+            container.classList.add('hidden');
+        } else {
+            container.classList.remove('hidden');
+        }
+    }
+
+    function toggleTimeWindow(show) {
+        const container = document.getElementById('time-window-container');
+        if (show) {
+            container.classList.remove('hidden');
+        } else {
+            container.classList.add('hidden');
+        }
+    }
+
+    function filterLeagues() {
+        const selectedSports = Array.from(document.querySelectorAll('input[name="sports"]:checked')).map(cb => cb.value);
+        const leagueLabels = document.querySelectorAll('#leagues-list label');
+
+        leagueLabels.forEach(label => {
+            const sportKey = label.getAttribute('data-sport');
+            if (selectedSports.length === 0 || selectedSports.includes(sportKey)) {
+                label.style.display = '';
+            } else {
+                label.style.display = 'none';
+                // Uncheck if hidden
+                const checkbox = label.querySelector('input[type="checkbox"]');
+                if (checkbox && checkbox.checked) {
+                    checkbox.checked = false;
+                    updateLeaguesDisplay();
+                }
+            }
+        });
+    }
+
+    function openCreateModal() {
+        const form = document.getElementById('createPresetForm');
+        form.reset();
+        document.getElementById('edit_preset_id').value = "";
+        document.getElementById('modal-title').innerText = "Create New Preset";
+        document.getElementById('submit-btn').innerText = "Create Preset";
+        document.getElementById('modal-delete-btn').classList.add('hidden');
+        form.querySelector('[name="active"]').checked = true;
+        form.querySelector('[name="ignore_benchmarks"]').checked = false;
+
+        // Reset displays
+        updateSportsDisplay();
+        updateLeaguesDisplay();
+        updateBookmakersDisplay();
+        updateMarketsDisplay();
+        updateSelectionsDisplay();
+
+        filterLeagues();
+        preset_modal.showModal();
+    }
+
+    function openEditModal(preset) {
+        const form = document.getElementById('createPresetForm');
+        form.reset();
+
+        document.getElementById('edit_preset_id').value = preset.id;
+        document.getElementById('modal-title').innerText = "Edit Preset: " + preset.name;
+        document.getElementById('submit-btn').innerText = "Update";
+        document.getElementById('modal-delete-btn').classList.remove('hidden');
+
+        form.querySelector('[name="name"]').value = preset.name;
+        form.querySelector('[name="active"]').checked = preset.active;
+        form.querySelector('[name="auto_trade"]').checked = preset.auto_trade || false;
+        form.querySelector('[name="ignore_benchmarks"]').checked = preset.ignore_benchmarks || false;
+
+        // Set checkboxes for multi-selects
+        const setCheckboxes = (name, vals) => {
+            if (!vals) return;
+            document.querySelectorAll(`input[name="${name}"]`).forEach(cb => {
+                cb.checked = vals.includes(cb.value);
+            });
+        };
+
+        setCheckboxes('sports', preset.sports);
+        setCheckboxes('bookmakers', preset.bookmakers);
+        setCheckboxes('leagues', preset.leagues);
+        setCheckboxes('markets', preset.markets);
+        setCheckboxes('selections', preset.selections);
+
+        form.querySelector('[name="show_all_leagues"]').checked = preset.show_all_leagues;
+        form.querySelector('[name="min_odds"]').value = preset.min_odds;
+        form.querySelector('[name="max_odds"]').value = preset.max_odds;
+        form.querySelector('[name="min_edge"]').value = preset.min_edge;
+        form.querySelector('[name="max_edge"]').value = preset.max_edge;
+        form.querySelector('[name="min_probability"]').value = preset.min_probability;
+        form.querySelector('[name="max_probability"]').value = preset.max_probability;
+
+        const isLive = preset.is_live.toString();
+        form.querySelector(`input[name="is_live"][value="${isLive}"]`).checked = true;
+
+        form.querySelector('[name="hours_before_min"]').value = preset.hours_before_min;
+        form.querySelector('[name="hours_before_max"]').value = preset.hours_before_max;
+        form.querySelector('[name="default_stake"]').value = preset.default_stake;
+        form.querySelector('[name="after_trade_action"]').value = preset.after_trade_action;
+
+        // Populate Other Config
+        const otherConfig = preset.other_config || {};
+        document.querySelectorAll('[data-other-config="true"]').forEach(el => {
+            const key = el.getAttribute('data-key');
+            if (otherConfig[key] !== undefined) {
+                el.value = otherConfig[key];
+            } else {
+                // Fallback to default if available? 
+                // Actually the template already set the default if schema was provided.
+                // But if editing, we should probably reset to default if not in otherConfig?
+                // Let's see if we have defaults in JS. For now just leave as is or reset if empty.
+            }
+        });
+
+        // Update displays
+        updateSportsDisplay();
+        updateLeaguesDisplay();
+        updateBookmakersDisplay();
+        updateMarketsDisplay();
+        updateSelectionsDisplay();
+
+        toggleLeagues();
+        toggleTimeWindow(!preset.is_live);
+        filterLeagues();
+        preset_modal.showModal();
+    }
+
+    async function deletePreset(id) {
+        if (!confirm("Are you sure?")) return;
+
+        const res = await fetch(`/api/v1/presets/${id}`, {
+            method: 'DELETE'
+        });
+
+        if (res.ok) {
+            showToast("Preset deleted", "success");
+            setTimeout(() => window.location.href = window.location.pathname, 500);
+        }
+        else if (res.status === 403) window.location.href = '/login';
+        else showToast("Failed to delete", "error");
+    }
+
+    async function submitPreset() {
+        const form = document.getElementById('createPresetForm');
+        const editId = document.getElementById('edit_preset_id').value;
+        const method = editId ? 'PATCH' : 'POST';
+        const url = editId ? `/api/v1/presets/${editId}` : '/api/v1/presets';
+
+        const data = {
+            name: form.querySelector('[name="name"]').value,
+            sports: Array.from(document.querySelectorAll('input[name="sports"]:checked')).map(cb => cb.value),
+            bookmakers: Array.from(document.querySelectorAll('input[name="bookmakers"]:checked')).map(cb => cb.value),
+            leagues: Array.from(document.querySelectorAll('input[name="leagues"]:checked')).map(cb => cb.value),
+            markets: Array.from(document.querySelectorAll('input[name="markets"]:checked')).map(cb => cb.value),
+            selections: Array.from(document.querySelectorAll('input[name="selections"]:checked')).map(cb => cb.value),
+            active: form.querySelector('[name="active"]').checked,
+            auto_trade: form.querySelector('[name="auto_trade"]').checked,
+            ignore_benchmarks: form.querySelector('[name="ignore_benchmarks"]').checked,
+            show_all_leagues: form.querySelector('[name="show_all_leagues"]').checked,
+            min_odds: parseFloat(form.querySelector('[name="min_odds"]').value) || null,
+            max_odds: parseFloat(form.querySelector('[name="max_odds"]').value) || null,
+            min_edge: parseFloat(form.querySelector('[name="min_edge"]').value) || null,
+            max_edge: parseFloat(form.querySelector('[name="max_edge"]').value) || null,
+            min_probability: parseFloat(form.querySelector('[name="min_probability"]').value) || null,
+            max_probability: parseFloat(form.querySelector('[name="max_probability"]').value) || null,
+            is_live: form.querySelector('input[name="is_live"]:checked').value === 'true',
+            hours_before_min: parseInt(form.querySelector('[name="hours_before_min"]').value) || null,
+            hours_before_max: parseInt(form.querySelector('[name="hours_before_max"]').value) || null,
+            default_stake: parseFloat(form.querySelector('[name="default_stake"]').value) || 10.0,
+            after_trade_action: form.querySelector('[name="after_trade_action"]').value,
+            other_config: {}
+        };
+
+        // Collect Other Config
+        document.querySelectorAll('[data-other-config="true"]').forEach(el => {
+            const key = el.getAttribute('data-key');
+            data.other_config[key] = el.value;
+        });
+
+        const res = await fetch(url, {
+            method: method,
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(data)
+        });
+
+        if (res.ok) {
+            showToast(editId ? "Preset updated" : "Preset created", "success");
+            setTimeout(() => window.location.href = window.location.pathname, 1000);
+        } else if (res.status === 403) {
+            window.location.href = '/login';
+        } else {
+            const err = await res.json();
+            showToast('Error: ' + (err.detail || JSON.stringify(err)), "error");
+        }
+    }
+
+    function closeModal() {
+        // Clear URL parameters without reloading
+        const url = new URL(window.location);
+        url.searchParams.delete('edit_id');
+        window.history.replaceState({}, '', url);
+        preset_modal.close();
+    }
+</script>
+
+<script id="presets-json" type="application/json">
+    {{ presets | tojson | safe }}
+</script>
+
+<script>
+    // Auto-open edit modal if edit_id is in URL
+    window.addEventListener('load', () => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const editId = urlParams.get('edit_id');
+        if (editId) {
+            const presetsJson = document.getElementById('presets-json').textContent;
+            const presetsData = JSON.parse(presetsJson);
+            const preset = presetsData.find(p => p.id == editId);
+            if (preset) {
+                openEditModal(preset);
+            }
+        }
+    });
+</script>
+{% endblock %}

@@ -1,0 +1,6 @@
+site_name: Sport Bet Finder
+theme: material
+
+nav:
+  - Home: index.md
+  - Bet History: bet_history.md

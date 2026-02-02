@@ -1,0 +1,269 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mx-auto max-w-4xl">
+    <div class="flex flex-row justify-between items-center mb-6">
+        <h1 class="text-3xl font-bold">Bookmaker Configuration</h1>
+    </div>
+
+    <!-- Bookmakers List -->
+    <div class="overflow-x-auto bg-base-100 rounded-box shadow-xl">
+        <table class="table w-full">
+            <thead>
+                <tr>
+                    <th>Title</th>
+                    <th class="text-center">Active</th>
+                    <th class="text-right hidden md:table-cell">Starting Balance</th>
+                    <th class="text-right hidden md:table-cell">Comm %</th>
+                    <th class="text-right">Balance</th>
+                    <th class="text-center">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for bm in bookmakers %}
+                <tr class="hover">
+                    <td class="font-semibold">{{ bm.title }}
+                        {% if bm.model_type != 'simple' %}
+                        <span class="badge badge-sm badge-info gap-1 ml-1">API</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-center">
+                        <input type="checkbox" class="toggle toggle-success toggle-sm" {% if bm.active %}checked{% endif
+                            %} onchange="toggleActive({{ bm.id }}, this.checked)" />
+                    </td>
+                    <td class="text-right font-mono text-xs opacity-70 hidden md:table-cell">
+                        {{ "%.2f"|format(bm.config.starting_balance or 0.0) }}
+                    </td>
+                    <td class="text-right font-mono text-xs opacity-70 hidden md:table-cell">
+                        {{ "%.1f"|format(bm.config.commission or 0.0) }}%
+                    </td>
+                    <td class="text-right font-mono">
+                        {{ "%.2f"|format(bm.balance or 0.0) }}
+                    </td>
+                    <td class="text-center">
+                        <button class="btn btn-sm btn-ghost btn-circle" onclick='openConfigModal({{ bm|tojson }})'>
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+                                stroke="currentColor" class="w-5 h-5">
+                                <path stroke-linecap="round" stroke-linejoin="round"
+                                    d="M10.343 3.94c.09-.542.56-.94 1.11-.94h1.093c.55 0 1.02.398 1.11 .94l.159.954c.046.28.26.505.534.56a9.921 9.921 0 011.666 .811c.243.149.55.08.73-.138l.687-.824c.37-.442 1.025-.506 1.48-.135l.772.63c.456.37.52 1.002.15 1.442l-.685 .822c-.18.217-.184.53-.01.767a9.922 9.922 0 011.025 1.455c.125.228.384.343.64.285l.97-.215c.57-.126 1.135.253 1.25.82l.216 1.053c.115.567-.25 1.127-.82 1.253l-.97.215c-.256.057-.464.22-.533.473a9.957 9.957 0 01-.582 1.83c-.105.253.003.528.232.695l.84.62c.49.362.59 1.055.226 1.545l-.772.63c-.365.49-1.054.59-1.543.226l-.84-.62a.49.49 0 00-.695.231 9.921 9.921 0 01-1.282 1.465c-.218.175-.285.485-.15.72l.487.855c.29.508.12 1.157-.388 1.45l-1.056.608c-.508.29-1.156.12-1.448-.39l-.487-.854a.49.49 0 00-.72-.15 9.932 9.932 0 01-1.92 0 .49.49 0 00-.72.15l-.487.854c-.292.51-.94.68-1.448.39l-1.056-.608c-.508-.292-.677-.942-.388-1.45l.487-.855c.135-.235.068-.545-.15-.72a9.921 9.921 0 01-1.282-1.465.49.49 0 00-.695-.231l-.84.62c-.49.364-1.179.263-1.543-.226l-.772-.63c-.364-.49-.264-1.183.226-1.545l.84-.62c.23-.167.337-.442.232-.695a9.957 9.957 0 01-.582-1.83.49.49 0 00-.533-.473l-.97-.215c-.57-.126-.935-.686-.82-1.253l.216-1.053c.115-.567.68-.946 1.25-.82l.97.215c.256.057.515-.057.64-.285a9.922 9.922 0 011.025-1.455.49.49 0 00-.01-.767l-.685-.822c-.37-.44-.306-1.072.15-1.442l.772-.63c.455-.371 1.11-.307 1.48.135l.687.824c.18.218.488.287.73.138a9.921 9.921 0 011.666-.811.49.49 0 00.534-.56l-.159-.954zM15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                        </button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Configuration Modal -->
+<dialog id="config_modal" class="modal">
+    <div class="modal-box w-11/12 max-w-2xl">
+        <h3 class="font-bold text-lg mb-4" id="modal_title">Edit Configuration</h3>
+
+        <form id="config_form" method="dialog" onsubmit="event.preventDefault(); saveConfig();">
+            <input type="hidden" id="bm_id" />
+            <div id="dynamic_fields" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <!-- Fields populated by JS -->
+            </div>
+
+            <div class="modal-action flex justify-between items-center">
+                <button type="button" class="btn btn-warning btn-sm hidden" id="test_conn_btn"
+                    onclick="testConnection()">
+                    Test Connection
+                </button>
+                <div class="flex gap-2">
+                    <button type="button" class="btn"
+                        onclick="document.getElementById('config_modal').close()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</dialog>
+
+<script id="bm_schemas" type="application/json">
+{{ bookmaker_schemas | tojson | safe }}
+</script>
+
+<script>
+    let currentBmId = null;
+    let currentBmKey = null;
+    const schemas = JSON.parse(document.getElementById('bm_schemas').textContent);
+    const implementedKeys = Object.keys(schemas);
+
+    function toggleActive(id, checked) {
+        fetch(`/api/v1/bookmakers/${id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ active: checked })
+        }).then(res => {
+            if (res.ok) {
+                showToast(`Bookmaker ${checked ? 'enabled' : 'disabled'}`, 'success');
+            } else {
+                showToast('Failed to update status', 'error');
+            }
+        });
+    }
+
+    function openConfigModal(bm) {
+        currentBmId = bm.id;
+        currentBmKey = bm.key;
+        document.getElementById('bm_id').value = bm.id;
+        document.getElementById('modal_title').innerText = `Configure ${bm.title}`;
+
+        const container = document.getElementById('dynamic_fields');
+        container.innerHTML = ''; // Clear existing
+
+        const schema = schemas[bm.key] || schemas['simple'] || [];
+        const config = bm.config || {};
+
+        // 1. Add Actual Balance (Always first and special)
+        const balanceDiv = document.createElement('div');
+        balanceDiv.className = 'form-control col-span-1 md:col-span-2 mb-2 p-2 bg-primary/10 rounded-lg';
+        balanceDiv.innerHTML = `
+            <label class="label"><span class="label-text font-bold text-sm md:text-base">Actual Balance (Available)</span></label>
+            <input type="number" step="0.01" id="field_actual_balance" class="input input-bordered border-primary input-sm md:input-md" value="${bm.balance || 0}" />
+            <label class="label"><span class="label-text-alt text-xs md:text-sm whitespace-normal text-left">Update the current available balance directly</span></label>
+        `;
+        container.appendChild(balanceDiv);
+
+
+
+        // 2. Add Schema Fields
+        schema.forEach(field => {
+            const fieldDiv = document.createElement('div');
+            fieldDiv.className = 'form-control';
+
+            let inputHtml = '';
+            const val = config[field.name] !== undefined ? config[field.name] : (field.default || '');
+
+            if (field.type === 'bool') {
+                inputHtml = `
+                    <label class="label cursor-pointer justify-start gap-4">
+                        <span class="label-text">${field.label}</span>
+                        <input type="checkbox" id="field_${field.name}" class="checkbox checkbox-primary" ${val ? 'checked' : ''} onchange="validateCredentials()" />
+                    </label>
+                `;
+            } else {
+                const type = field.type === 'password' ? 'password' : (field.type === 'int' || field.type === 'float' ? 'number' : 'text');
+                const step = field.type === 'float' ? 'step="0.01"' : '';
+                inputHtml = `
+                    <label class="label"><span class="label-text text-sm md:text-base">${field.label}</span></label>
+                    <input type="${type}" ${step} id="field_${field.name}" class="input input-bordered input-sm md:input-md" value="${val}" oninput="validateCredentials()" />
+                `;
+            }
+
+            fieldDiv.innerHTML = inputHtml;
+            container.appendChild(fieldDiv);
+        });
+
+        // Show test button if special implementation OR not simple model
+        if (implementedKeys.includes(bm.key) || bm.model_type !== 'simple') {
+            document.getElementById('test_conn_btn').classList.remove('hidden');
+            validateCredentials();
+        } else {
+            document.getElementById('test_conn_btn').classList.add('hidden');
+        }
+
+        document.getElementById('config_modal').showModal();
+    }
+
+    function validateCredentials() {
+        const btn = document.getElementById('test_conn_btn');
+        if (!btn) return;
+
+        const username = document.getElementById('field_username')?.value || '';
+        const password = document.getElementById('field_password')?.value || '';
+        const apiToken = document.getElementById('field_api_token')?.value || '';
+
+        const hasUserPass = username.trim() !== '' && password.trim() !== '';
+        const hasToken = apiToken.trim() !== '';
+
+        btn.disabled = !(hasUserPass || hasToken);
+    }
+
+    function getPayload() {
+        if (!currentBmId || !currentBmKey) return null;
+        const schema = schemas[currentBmKey] || schemas['simple'] || [];
+        const config = {};
+
+        schema.forEach(field => {
+            const el = document.getElementById(`field_${field.name}`);
+            if (!el) return;
+
+            if (field.type === 'bool') {
+                config[field.name] = el.checked;
+            } else if (field.type === 'int') {
+                config[field.name] = el.value ? parseInt(el.value) : null;
+            } else if (field.type === 'float') {
+                config[field.name] = el.value ? parseFloat(el.value) : null;
+            } else {
+                config[field.name] = el.value;
+            }
+        });
+
+        const actual_balance = document.getElementById('field_actual_balance').value;
+        return {
+            config: config,
+            balance: actual_balance ? parseFloat(actual_balance) : 0
+        };
+    }
+
+    function saveConfig() {
+        const payload = getPayload();
+        if (!payload) return;
+
+        fetch(`/api/v1/bookmakers/${currentBmId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        }).then(res => {
+            if (res.ok) {
+                showToast('Configuration saved', 'success');
+                document.getElementById('config_modal').close();
+                setTimeout(() => window.location.reload(), 500);
+            } else {
+                showToast('Failed to save configuration', 'error');
+            }
+        });
+    }
+
+    function testConnection() {
+        const payload = getPayload();
+        if (!payload) return;
+
+        const btn = document.getElementById('test_conn_btn');
+        const originalText = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="loading loading-spinner loading-sm"></span> Testing...';
+
+        // Save first then test
+        fetch(`/api/v1/bookmakers/${currentBmId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        }).then(res => {
+            if (res.ok) {
+                return fetch(`/api/v1/bookmakers/${currentBmId}/test-connection`, { method: 'POST' });
+            } else {
+                throw new Error('Failed to save before testing');
+            }
+        })
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === 'success' && data.connected) {
+                    showToast('Connection Successful & Data Synced', 'success');
+                    setTimeout(() => window.location.reload(), 1000);
+                } else {
+                    showToast('Connection Failed: ' + (data.message || 'Unknown error'), 'error');
+                }
+            })
+            .catch(err => showToast(err.message, 'error'))
+            .finally(() => {
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+            });
+    }
+</script>
+{% endblock %}

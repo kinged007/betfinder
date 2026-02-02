@@ -1,0 +1,894 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+    /* Flash animations for odds changes */
+    @keyframes flashGreen {
+        0% {
+            background-color: rgba(34, 197, 94, 0.4);
+        }
+
+        100% {
+            background-color: transparent;
+        }
+    }
+
+    @keyframes flashRed {
+        0% {
+            background-color: rgba(239, 68, 68, 0.4);
+        }
+
+        100% {
+            background-color: transparent;
+        }
+    }
+
+    .flash-increase {
+        animation: flashGreen 1.5s ease-out;
+    }
+
+    .flash-decrease {
+        animation: flashRed 1.5s ease-out;
+    }
+</style>
+<div class="w-full md:max-w-6xl px-0 md:px-4">
+    {% if current_preset %}
+    <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6 px-4 md:px-0">
+        <div class="flex items-center gap-3">
+            <h2 class="text-xl md:text-2xl font-bold">{{ current_preset.name }}</h2>
+            <a href="/presets-view?edit_id={{ current_preset.id }}" class="btn btn-ghost btn-xs btn-circle tooltip"
+                data-tip="Edit Preset">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24"
+                    stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+            </a>
+        </div>
+        <div class="flex flex-wrap gap-2 items-center">
+            <span class="text-xs opacity-50 uppercase font-bold">Group By:</span>
+            <div class="join shadow-sm border border-base-300">
+                <button class="btn btn-sm join-item bg-base-200 active-group"
+                    onclick="setGroupBy('none', this)">None</button>
+                <button class="btn btn-sm join-item bg-base-200" onclick="setGroupBy('sport', this)">Sport</button>
+                <button class="btn btn-sm join-item bg-base-200" onclick="setGroupBy('bookmaker', this)">Bookie</button>
+                <button class="btn btn-sm join-item bg-base-200" onclick="setGroupBy('league', this)">League</button>
+                <button class="btn btn-sm join-item bg-base-200" onclick="setGroupBy('event', this)">Event</button>
+                <button class="btn btn-sm btn-ghost gap-2 border border-base-300 shadow-sm" onclick="openHiddenModal()">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 opacity-70" fill="none" viewBox="0 0 24 24"
+                        stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.956 9.956 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="card bg-base-100 shadow-xl md:rounded-xl rounded-none">
+        <div class="card-body p-0 md:p-1 overflow-visible">
+            <table class="table w-full" id="trade-table">
+                <thead>
+                    <tr class="bg-base-200 text-[10px] md:text-sm">
+                        <th class="cursor-pointer hover:bg-base-300 transition-colors px-2 md:px-4"
+                            onclick="setSort('start_time')">
+                            <div class="flex items-center gap-1">Time <span id="sort-start_time"></span></div>
+                        </th>
+                        <th class="cursor-pointer hover:bg-base-300 transition-colors px-2 md:px-4"
+                            onclick="setSort('home')">
+                            <div class="flex items-center gap-1">Market <span id="sort-home"></span></div>
+                        </th>
+
+                        <th class="px-1 cursor-pointer hover:bg-base-300 transition-colors" onclick="setSort('price')">
+                            <div class="flex items-center gap-1 justify-center text-center">Odds <span
+                                    id="sort-price"></span>
+                            </div>
+                        </th>
+
+                        <th class="px-1 cursor-pointer hover:bg-base-300 transition-colors" onclick="setSort('edge')">
+                            <div class="flex items-center gap-1 justify-center text-center">Edge <span
+                                    id="sort-edge"></span>
+                            </div>
+                        </th>
+                        <th class="px-1 text-center">Action</th>
+                    </tr>
+                </thead>
+                <tbody id="trade-feed-body">
+                    <tr>
+                        <td colspan="5" class="text-center py-10">
+                            <span class="loading loading-spinner loading-lg"></span>
+                            <div class="mt-2 text-gray-500">Waiting for data...</div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Betting Popup Dialog -->
+    <dialog id="bet-modal" class="modal">
+        <div class="modal-box max-w-md">
+            <!-- Header -->
+            <div class="flex justify-between items-start mb-3">
+                <div class="flex-1">
+                    <div class="flex items-center gap-2 text-base font-semibold">
+                        <span id="modal-home-display"></span>
+                        <button onclick="copyToClipboard('modal-home')"
+                            class="btn btn-xs btn-ghost p-0 h-auto min-h-0 opacity-40 hover:opacity-100"
+                            title="Copy Home Team">
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2">
+                                </path>
+                            </svg>
+                        </button>
+                        <span class="opacity-50">vs</span>
+                        <span id="modal-away-display"></span>
+                        <button onclick="copyToClipboard('modal-away')"
+                            class="btn btn-xs btn-ghost p-0 h-auto min-h-0 opacity-40 hover:opacity-100"
+                            title="Copy Away Team">
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2">
+                                </path>
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="flex items-center gap-2 text-xs opacity-60 mt-1">
+                        <span id="modal-league-short"></span>
+                        <span class="opacity-50">•</span>
+                        <span id="modal-start-time" class="flex items-center gap-1">
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                            <span id="modal-time-text"></span>
+                        </span>
+                    </div>
+                </div>
+                <button onclick="document.getElementById('bet-modal').close()"
+                    class="btn btn-sm btn-ghost btn-circle">✕</button>
+            </div>
+
+            <!-- Market/Selection Display -->
+            <div class="text-center mb-6">
+                <h3 class="text-lg font-bold text-info" id="modal-market-selection"></h3>
+            </div>
+
+            <!-- Three Column Stats -->
+            <div class="grid grid-cols-3 gap-2 mb-6">
+                <div class="text-center">
+                    <div class="text-xs opacity-60 uppercase mb-1">Odds</div>
+                    <input type="number" step="0.01" id="modal-odds"
+                        class="input input-bordered input-sm w-full text-center font-bold"
+                        oninput="recalculateEdge()" />
+                </div>
+                <div class="text-center">
+                    <div class="text-xs opacity-60 uppercase mb-1">Prob</div>
+                    <div class="font-bold text-lg" id="modal-prob-display"></div>
+                </div>
+                <div class="text-center">
+                    <div class="text-xs opacity-60 uppercase mb-1">Edge</div>
+                    <div class="font-bold text-lg text-success" id="modal-edge"></div>
+                </div>
+            </div>
+
+            <!-- Bookmaker Info -->
+            <div class="text-center text-sm opacity-70 mb-4 flex items-center justify-center gap-2">
+                Place this trade with <span id="modal-bookmaker-name" class="font-semibold"></span>
+                <a id="modal-bookmaker-link" href="#" target="_blank"
+                    class="hidden btn btn-ghost btn-xs btn-circle p-0 h-6 w-6" title="Open Bookmaker">
+                    <svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+                    </svg>
+                </a>
+            </div>
+
+            <!-- Stake Input -->
+            <div class="mb-6">
+                <div class="relative flex items-center">
+                    <input type="number" step="0.01" id="modal-stake"
+                        class="input input-bordered input-lg w-full text-center text-2xl pr-16" value="10" />
+                    <span class="absolute right-4 text-base opacity-50 bg-base-100 px-2">EUR</span>
+                </div>
+            </div>
+
+            <!-- Register Button -->
+            <button class="btn btn-primary btn-block btn-lg" onclick="submitBet()">
+                REGISTER TRADE
+            </button>
+
+            <!-- Hidden fields -->
+            <input type="hidden" id="modal-event-id" />
+            <input type="hidden" id="modal-home" />
+            <input type="hidden" id="modal-away" />
+            <input type="hidden" id="modal-sport" />
+            <input type="hidden" id="modal-league" />
+            <input type="hidden" id="modal-market" />
+            <input type="hidden" id="modal-selection" />
+            <input type="hidden" id="modal-bookmaker" />
+            <input type="hidden" id="modal-true-odds" />
+            <input type="hidden" id="modal-probability" />
+            <input type="hidden" id="modal-point" />
+            <input type="hidden" id="modal-url" />
+            <input type="hidden" id="modal-start-time" />
+
+            <!-- Real values for clipboard -->
+            <input type="hidden" id="modal-home" />
+            <input type="hidden" id="modal-away" />
+        </div>
+        <form method="dialog" class="modal-backdrop">
+            <button>close</button>
+        </form>
+    </dialog>
+
+    <style>
+        .active-group {
+            background-color: var(--primary) !important;
+            color: var(--primary-content) !important;
+        }
+
+        .group-header {
+            background-color: var(--fallback-b3, oklch(var(--b3)));
+            font-weight: bold;
+            font-size: 0.875rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+
+
+        .sort-icon {
+            font-size: 10px;
+            opacity: 0.5;
+        }
+
+        /* Paired row hover effect - strictly constrained to the trade item block */
+        .trade-row-1:hover,
+        .trade-row-1:hover+.trade-row-2,
+        .trade-row-2:hover,
+        .trade-row-1:has(+ .trade-row-2:hover) {
+            background-color: rgba(255, 255, 255, 0.07) !important;
+        }
+
+
+        @media (max-width: 768px) {
+            .hidden-items-table {
+                font-size: 0.7rem;
+            }
+
+            .hidden-items-table .btn {
+                font-size: 0.6rem;
+                padding-left: 0.25rem;
+                padding-right: 0.25rem;
+                height: 1.25rem;
+                min-height: 1.25rem;
+            }
+        }
+    </style>
+
+    <!-- Hidden Items Modal -->
+    <dialog id="hidden-items-modal" class="modal">
+        <div class="modal-box w-11/12 max-w-6xl p-0 h-[95vh] md:h-auto max-h-[95vh] md:max-h-[85vh] flex flex-col">
+            <div class="p-6 border-b border-base-300 flex justify-between items-center sticky top-0 bg-base-100 z-10">
+                <h3 class="font-bold text-lg">Hidden Opportunities</h3>
+                <form method="dialog">
+                    <button class="btn btn-sm btn-circle btn-ghost">✕</button>
+                </form>
+            </div>
+            <div class="p-0 overflow-y-auto overflow-x-visible flex-grow">
+                <table class="table table-zebra w-full hidden-items-table">
+                    <thead class="bg-base-200 sticky top-0 z-10">
+                        <tr>
+                            <th class="hidden md:table-cell">Start Time</th>
+                            <th>Event & Market</th>
+                            <th class="hidden lg:table-cell">Bookie</th>
+                            <th>Odds</th>
+                            <th>Edge</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="hidden-items-body">
+                        <!-- Content loaded via JS -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop">
+            <button>close</button>
+        </form>
+    </dialog>
+
+    <script>
+        const presetId = "{{ current_preset.id }}";
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const ws = new WebSocket(`${protocol}//${window.location.host}/ws/tradefeed/${presetId}`);
+        const tbody = document.getElementById("trade-feed-body");
+        let lastData = [];
+
+        // Config from preset
+        const otherConfig = {{ (current_preset.other_config or { }) | tojson | safe }};
+        let currentGroupBy = otherConfig.group_by || 'none';
+        let sortCol = otherConfig.sort_by || 'edge';
+        let sortDir = otherConfig.sort_order || 'desc';
+        let collapsedGroups = new Set();
+
+        // Set initial group active button
+        window.addEventListener('DOMContentLoaded', () => {
+            document.querySelectorAll('.join-item').forEach(btn => {
+                const mode = btn.getAttribute('onclick').match(/'([^']+)'/)[1];
+                if (mode === currentGroupBy) {
+                    document.querySelectorAll('.join-item').forEach(b => b.classList.remove('active-group'));
+                    btn.classList.add('active-group');
+                }
+            });
+            updateSortUI();
+        });
+
+        function toggleGroup(key) {
+            if (collapsedGroups.has(key)) {
+                collapsedGroups.delete(key);
+            } else {
+                collapsedGroups.add(key);
+            }
+            renderData(lastData);
+        }
+
+        function setGroupBy(mode, btn) {
+            if (currentGroupBy !== mode) {
+                collapsedGroups.clear();
+            }
+            currentGroupBy = mode;
+            document.querySelectorAll('.join-item').forEach(b => b.classList.remove('active-group'));
+            btn.classList.add('active-group');
+            renderData(lastData);
+        }
+
+        function setSort(col) {
+            if (sortCol === col) {
+                sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+            } else {
+                sortCol = col;
+                sortDir = 'asc';
+            }
+            updateSortUI();
+            renderData(lastData);
+        }
+
+        function updateSortUI() {
+            // Reset all icons
+            ['start_time', 'home', 'bookmaker', 'price', 'true_odds', 'edge'].forEach(c => {
+                const el = document.getElementById(`sort-${c}`);
+                if (el) el.innerHTML = '';
+            });
+
+            const activeEl = document.getElementById(`sort-${sortCol}`);
+            if (activeEl) {
+                activeEl.innerHTML = sortDir === 'asc' ? '▲' : '▼';
+                activeEl.className = 'sort-icon opacity-100 text-primary';
+            }
+        }
+
+        function renderData(data) {
+            tbody.innerHTML = "";
+
+            if (data.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" class="text-center py-10 text-gray-400 font-medium">No opportunities found currently.</td></tr>`;
+                return;
+            }
+
+            // Apply sorting
+            const sortedData = [...data].sort((a, b) => {
+                let valA = a[sortCol];
+                let valB = b[sortCol];
+
+                // Handle case-insensitive string compare
+                if (typeof valA === 'string') valA = valA.toLowerCase();
+                if (typeof valB === 'string') valB = valB.toLowerCase();
+
+                if (valA < valB) return sortDir === 'asc' ? -1 : 1;
+                if (valA > valB) return sortDir === 'asc' ? 1 : -1;
+                return 0;
+            });
+
+            if (currentGroupBy === 'none') {
+                tbody.innerHTML = sortedData.map((item, idx) => getRowHtml(item, idx % 2 === 0)).join('');
+            } else {
+                const groups = {};
+                const groupOrder = [];
+                sortedData.forEach(item => {
+                    let key = "";
+                    if (currentGroupBy === 'sport') key = item.sport;
+                    else if (currentGroupBy === 'league') key = item.league;
+                    else if (currentGroupBy === 'bookmaker') key = item.bookmaker;
+                    else if (currentGroupBy === 'event') key = `${item.home} vs ${item.away}`;
+
+                    if (!groups[key]) {
+                        groups[key] = [];
+                        groupOrder.push(key);
+                    }
+                    groups[key].push(item);
+                });
+
+                let globalTradeIdx = 0;
+                groupOrder.forEach(key => {
+                    const groupRows = groups[key];
+                    const isCollapsed = collapsedGroups.has(key);
+
+                    // Create a sanitized key for the onclick handler
+                    const escapedKey = key.replace(/'/g, "\\'");
+
+                    tbody.innerHTML += `
+                        <tr class="group-header cursor-pointer select-none transition-colors hover:bg-base-200" 
+                            onclick="toggleGroup('${escapedKey}')">
+                            <td colspan="5" class="py-2 px-4 shadow-sm">
+                                <div class="flex items-center gap-3">
+                                    <span class="text-[10px] transition-transform duration-200 ${isCollapsed ? '-rotate-90' : ''}">▼</span>
+                                    <span class="text-xs font-bold tracking-widest">${key}</span>
+                                    <div class="flex-grow"></div>
+                                    <span class="badge badge-ghost badge-sm opacity-60 font-mono">${groupRows.length}</span>
+                                </div>
+                            </td>
+                        </tr>
+                    `;
+
+                    if (!isCollapsed) {
+                        tbody.innerHTML += groupRows.map(item => {
+                            const html = getRowHtml(item, globalTradeIdx % 2 === 0);
+                            globalTradeIdx++;
+                            return html;
+                        }).join('');
+                    }
+                });
+            }
+        }
+
+        function getRowHtml(item, isEven) {
+            const edgeClass = item.edge > 0 ? "text-success" : "text-error";
+            const timeHtml = window.formatLocalTime(item.start_time);
+            const bgColorClass = isEven ? '' : 'bg-base-200/40';
+
+            // Countdown logic
+            let startStr = item.start_time;
+            if (startStr && !startStr.endsWith('Z') && !startStr.includes('+')) {
+                startStr += 'Z';
+            }
+            const d = new Date(startStr);
+            const now = new Date();
+            const diffMs = d - now;
+            const diffHours = diffMs / (1000 * 60 * 60);
+
+            let countdownLabel = "";
+            if (diffHours > 0) {
+                if (diffHours < 1) {
+                    countdownLabel = `in ${Math.floor(diffMs / (1000 * 60))}m`;
+                } else if (diffHours < 24) {
+                    countdownLabel = `in ${diffHours.toFixed(0)}h`;
+                } else {
+                    countdownLabel = `in ${Math.floor(diffHours / 24)}d`;
+                }
+            } else if (diffHours > -1.5) {
+                countdownLabel = `<span class="badge badge-warning badge-xs animate-pulse">LIVE</span>`;
+            } else {
+                countdownLabel = `<span class="badge badge-ghost badge-xs opacity-50">Completed</span>`;
+            }
+
+            const itemJson = JSON.stringify(item).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
+            return `
+                <tr class="${bgColorClass} trade-row-1 cursor-pointer border-none" 
+                    data-row-id="${item.row_id}" 
+                    onclick='openBetModal(${itemJson})'>
+                    <td colspan="5" class="pb-2 pt-6 border-none px-2 md:px-4">
+                        <div class="flex items-center gap-2 mb-1">
+                            <span class="text-[10px] font-bold text-primary/70 uppercase tracking-widest">${item.sport}</span>
+                            <span class="text-[10px] opacity-40">•</span>
+                            <span class="text-[10px] opacity-60 font-medium">${item.league}</span>
+                        </div>
+                        <div class="flex items-center gap-2 overflow-hidden">
+                             <div class="font-bold text-sm text-base-content/90 tracking-tight truncate">${item.home} vs ${item.away}
+                             ${item.has_bet ? ' <span class="ml-2 badge badge-success badge-xs tooltip tooltip-right" data-tip="Bet Placed"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg></span>' : ''}</div>
+                             ${item.url ? `
+                                <a href="${item.url}" target="_blank" class="btn btn-ghost btn-xs btn-circle p-0 h-4 w-4 min-h-0 opacity-40 hover:opacity-100" title="Open on Bookmaker" onclick="event.stopPropagation()">
+                                    <svg class="w-3.5 h-3.5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+                                    </svg>
+                                </a>
+                            ` : ''}
+                        </div>
+                    </td>
+                </tr>
+                <tr class="${bgColorClass} trade-row-2 cursor-pointer border-t-0" 
+                    data-row-id="${item.row_id}" 
+                    onclick='openBetModal(${itemJson})'>
+                    <td class="whitespace-nowrap align-top py-2 px-2 md:px-4">
+                        <div class="flex items-center gap-2">
+                            <svg class="w-3 h-3 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            <div>
+                                <div class="text-xs font-medium">${timeHtml}</div>
+                                <div class="text-[10px] opacity-50 font-mono">${countdownLabel}</div>
+                            </div>
+                        </div>
+                    </td>
+                    <td class="align-top py-2 px-2 md:px-4">
+                        <div class="flex flex-wrap gap-1 items-center">
+                            <span class="text-[10px] bg-base-200 px-1 rounded font-medium uppercase truncate max-w-[80px]">${item.market}</span>
+                            <span class="text-[11px] font-bold text-primary truncate max-w-[100px]">${item.selection.charAt(0).toUpperCase() + item.selection.slice(1).toLowerCase()}</span>
+                            ${item.point !== null ? `<span class="text-[11px] font-bold text-secondary">(${item.point > 0 ? '+' : ''}${item.point})</span>` : ''}
+                        </div>
+                    </td>
+
+                    <td class="px-1 text-center align-top py-2">
+                        <div class="flex items-center justify-center gap-1">
+                            <span class="font-bold text-accent text-sm">${item.price.toFixed(2)}</span>
+                            ${item.implied_probability ? `<span class="text-[10px] opacity-40 whitespace-nowrap tooltip tooltip-bottom" data-tip="Implied Probability">(${(item.implied_probability * 100).toFixed(0)}%)</span>` : ''}
+                        </div>
+                    </td>
+                    <td class="font-bold ${edgeClass} text-xs md:text-sm px-1 text-center align-top py-2">${item.edge !== null ? (item.edge * 100).toFixed(2) + '%' : '-'}</td>
+                    <td class="px-1 align-top py-1" onclick="event.stopPropagation()">
+                        <div class="flex flex-col items-center gap-1">
+                            <div class="flex items-center gap-2">
+                                <div class="dropdown dropdown-end">
+                                    <label tabindex="0" class="btn btn-xs btn-ghost btn-circle" onclick="event.stopPropagation()">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" /></svg>
+                                    </label>
+                                    <ul tabindex="0" class="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-52 text-xs">
+                                        <li><a onclick='hideItem("event", ${itemJson})'>Hide Event</a></li>
+                                        <li><a onclick='hideItem("market", ${itemJson})'>Hide Market</a></li>
+                                        <li><a onclick='hideItem("selection", ${itemJson})'>Hide Selection</a></li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }
+
+        async function hideItem(type, item) {
+            event.stopPropagation();
+            if (!confirm(`Are you sure you want to hide this ${type}?`)) return;
+
+            // Calculate expiry: Event Start + 24 Hours
+            const startTime = new Date(item.start_time);
+            const expiryDate = new Date(startTime.getTime() + 24 * 60 * 60 * 1000);
+
+            const payload = {
+                event_id: item.event_id,
+                expiry_at: expiryDate.toISOString()
+            };
+
+            if (type === 'market' || type === 'selection') {
+                payload.market_key = item.market;
+            }
+            if (type === 'selection') {
+                payload.selection_norm = item.selection;
+            }
+
+            try {
+                const response = await fetch(`/api/v1/presets/${presetId}/hidden-items`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }, // Assuming dev key for now or handled by browser cookie if auth uses cookies? 
+                    // Wait, presets.py uses Depends(get_api_key). If this is a wrapper for frontend `views.py` usually handles auth differently or shares session.
+                    // But `router` in `presets.py` protects endpoints. The frontend JS needs the key? 
+                    // Actually, usually frontend calls proxy or uses session auth if configured. 
+                    // Looking at `presets.py`: `router = APIRouter(dependencies=[Depends(get_api_key)])`.
+                    // The `views.py` usually renders HTML. The JS fetch needs credentials.
+                    // If the user is surfing the web view, they might not have the API key in a variable. 
+                    // Let's check how other API calls work or if I need to expose `api_key` in the template.
+                    body: JSON.stringify(payload)
+                });
+
+                // Check auth: `app/core/security.py` check.
+                // If I am using `uv run dev`, maybe auth is generic?
+                // Let's assume for now I need to fetch the key or it works if I send the header.
+                // Actually `views.py` usually doesn't need API key if it's session based, but `presets.py` is under `api/v1` which likely enforces API Key.
+                // I might need to put the API key in the template.
+
+                if (response.ok) {
+                    showToast(`${type.charAt(0).toUpperCase() + type.slice(1)} hidden successfully`, 'success');
+                    // Update frontend data
+                    if (type === 'event') {
+                        lastData = lastData.filter(d => d.event_id !== item.event_id);
+                    } else if (type === 'market') {
+                        lastData = lastData.filter(d => !(d.event_id === item.event_id && d.market === item.market));
+                    } else {
+                        lastData = lastData.filter(d => !(d.event_id === item.event_id && d.market === item.market && d.selection === item.selection));
+                    }
+                    renderData(lastData);
+                } else {
+                    console.error("Failed to hide item", await response.text());
+                    showToast("Failed to hide item", "error");
+                }
+            } catch (e) {
+                console.error(e);
+                showToast("Error hiding item", "error");
+            }
+        }
+
+        async function unhideItem(hidden_id) {
+            if (!confirm("Un-hide this item?")) return;
+            try {
+                const response = await fetch(`/api/v1/presets/${presetId}/hidden-items/${hidden_id}`, {
+                    method: 'DELETE',
+                });
+                if (response.ok) {
+                    showToast("Item un-hidden", "success");
+                    // Refresh hidden items list
+                    openHiddenModal();
+                } else {
+                    showToast("Failed to un-hide", "error");
+                }
+            } catch (e) {
+                showToast("Error un-hiding", "error");
+            }
+        }
+
+        async function openHiddenModal() {
+            const body = document.getElementById('hidden-items-body');
+            body.innerHTML = `<tr><td colspan="5" class="text-center py-20"><span class="loading loading-spinner loading-lg"></span></td></tr>`;
+            document.getElementById('hidden-items-modal').showModal();
+
+            try {
+                const response = await fetch(`/trade-feed/hidden-items?preset_id=${presetId}`);
+                const data = await response.json();
+
+                if (data.length === 0) {
+                    body.innerHTML = `<tr><td colspan="5" class="text-center py-20 text-gray-400">No hidden items found.</td></tr>`;
+                    return;
+                }
+
+                body.innerHTML = data.map(item => {
+                    const timeHtml = window.formatLocalTime(item.start_time);
+                    const edgeClass = item.edge > 0 ? "text-success" : "text-error";
+                    const itemJson = JSON.stringify(item).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
+                    return `
+                        <tr class="hover cursor-pointer hidden-item-row" onclick='openBetModal(${itemJson})'>
+                            <td class="whitespace-nowrap hidden md:table-cell text-xs opacity-70 py-4">${timeHtml}</td>
+                            <td class="py-4">
+                                <div class="font-bold text-xs leading-tight">${item.home} vs ${item.away}</div>
+                                <div class="flex flex-wrap gap-1 items-center mt-1">
+                                    <span class="text-[9px] bg-base-200 px-1 rounded uppercase">${item.market}</span>
+                                    <span class="text-[10px] font-bold text-primary">${item.selection}</span>
+                                    ${item.point !== null ? `<span class="text-[10px] font-bold text-secondary">(${item.point > 0 ? '+' : ''}${item.point})</span>` : ''}
+                                    ${item.has_bet ? ' <span class="ml-2 badge badge-success badge-xs tooltip tooltip-right" data-tip="Bet Placed"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg></span>' : ''}
+                                </div>
+                            </td>
+                            <td class="hidden lg:table-cell py-4"><span class="badge badge-outline badge-xs">${item.bookmaker}</span></td>
+                            <td class="font-bold text-xs py-4">
+                                ${item.price.toFixed(2)}
+                                ${item.implied_probability ? `<div class="text-[9px] opacity-40 whitespace-nowrap tooltip tooltip-bottom" data-tip="Implied Probability">(${(item.implied_probability * 100).toFixed(0)}%)</div>` : ''}
+                            </td>
+
+                            <td class="font-bold ${edgeClass} text-xs py-4">${item.edge !== null ? (item.edge * 100).toFixed(2) + '%' : '-'}</td>
+                            <td onclick="event.stopPropagation()" class="py-4">
+                                 <div class="flex flex-col items-center gap-1">
+                                     <button class="btn btn-xs btn-primary w-full" onclick='openBetModal(${itemJson})'>Bet</button>
+                                     <button class="btn btn-xs btn-ghost text-success" onclick="unhideItem(${item.hidden_id})">Unhide</button>
+                                 </div>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+
+            } catch (e) {
+                console.error(e);
+                body.innerHTML = `<tr><td colspan="5" class="text-center py-20 text-error">Failed to load hidden items.</td></tr>`;
+            }
+        }
+
+        function openBetModal(item) {
+            // Store all data in hidden fields
+            document.getElementById('modal-event-id').value = item.event_id;
+            document.getElementById('modal-home').value = item.home;
+            document.getElementById('modal-away').value = item.away;
+            document.getElementById('modal-sport').value = item.sport;
+            document.getElementById('modal-league').value = item.league;
+            document.getElementById('modal-market').value = item.market;
+            document.getElementById('modal-selection').value = item.selection;
+            document.getElementById('modal-bookmaker').value = item.bookmaker;
+            document.getElementById('modal-odds').value = item.price.toFixed(2);
+            document.getElementById('modal-true-odds').value = item.true_odds;
+            document.getElementById('modal-point').value = item.point;
+            document.getElementById('modal-url').value = item.url || '';
+            document.getElementById('modal-start-time').value = item.start_time;
+
+            // Probability from true odds (benchmark - doesn't change), if true odds, else use current odds
+            const trueProbability = item.true_odds ? (1 / item.true_odds * 100).toFixed(2) : (1 / item.price * 100).toFixed(2);
+            document.getElementById('modal-probability').value = trueProbability;
+            document.getElementById('modal-prob-display').textContent = `${trueProbability}%`;
+
+            // Populate visible fields
+            document.getElementById('modal-home-display').textContent = item.home;
+            document.getElementById('modal-away-display').textContent = item.away;
+            document.getElementById('modal-league-short').textContent = item.league;
+
+            // Format market + selection (include point if available)
+            const selectionName = item.selection_name;
+            const selectionNorm = item.selection.charAt(0).toUpperCase() + item.selection.slice(1).toLowerCase();
+            const marketKey = item.market.toUpperCase();
+            const pointDisplay = item.point !== null ? ` (${item.point > 0 ? '+' : ''}${item.point})` : '';
+            document.getElementById('modal-market-selection').textContent = `${selectionName} (${selectionNorm})${pointDisplay} - ${marketKey}`;
+
+            document.getElementById('modal-bookmaker-name').textContent = item.bookmaker;
+
+            // Handle Link
+            const linkBtn = document.getElementById('modal-bookmaker-link');
+            if (item.url) {
+                linkBtn.href = item.url;
+                linkBtn.classList.remove('hidden');
+            } else {
+                linkBtn.classList.add('hidden');
+            }
+
+            // Time display
+            const timeDisplay = window.formatLocalTime(item.start_time);
+            document.getElementById('modal-time-text').innerHTML = timeDisplay;
+
+            // Initialize Stake from preset
+            const defaultStake = parseFloat("{{ current_preset.default_stake }}") || 10;
+            document.getElementById('modal-stake').value = defaultStake;
+
+            recalculateEdge();
+            document.getElementById('bet-modal').showModal();
+        }
+
+        async function copyToClipboard(fieldId) {
+            const val = document.getElementById(fieldId).value;
+            try {
+                await navigator.clipboard.writeText(val);
+                // Optional: show a mini toast or feedback
+            } catch (err) {
+                // Fallback for older browsers
+                const input = document.getElementById(fieldId);
+                input.select();
+                document.execCommand('copy');
+            }
+        }
+
+        function recalculateEdge() {
+            const price = parseFloat(document.getElementById('modal-odds').value);
+            const trueOdds = parseFloat(document.getElementById('modal-true-odds').value);
+
+            if (price && trueOdds) {
+                // Edge calculation only (probability stays constant from true odds)
+                const edge = ((price / trueOdds - 1) * 100).toFixed(2);
+                document.getElementById('modal-edge').textContent = `${edge}%`;
+            }
+        }
+
+        async function submitBet() {
+            const betData = {
+                event_id: document.getElementById('modal-event-id').value,
+                bookmaker: document.getElementById('modal-bookmaker').value,
+                market: document.getElementById('modal-market').value,
+                selection: document.getElementById('modal-selection').value,
+                price: parseFloat(document.getElementById('modal-odds').value),
+                stake: parseFloat(document.getElementById('modal-stake').value),
+                true_odds: parseFloat(document.getElementById('modal-true-odds').value),
+                preset_id: parseInt(presetId)
+            };
+
+            try {
+                const response = await fetch('/trade-feed/bet', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(betData)
+                });
+
+                if (response.ok) {
+                    showToast('Trade registered successfully!', 'success');
+                    document.getElementById('bet-modal').close();
+
+                    const afterTradeAction = "{{ current_preset.after_trade_action }}";
+                    if (afterTradeAction === 'keep') {
+                        // Just refresh the data to show the "Bet Placed" badge
+                        // Instead of a full reload, we can just update the flag locally
+                        const itemIdx = lastData.findIndex(d => d.event_id === betData.event_id && d.market === betData.market && d.selection === betData.selection);
+                        if (itemIdx !== -1) {
+                            lastData[itemIdx].has_bet = true;
+                            renderData(lastData);
+                        }
+                        return;
+                    }
+
+                    // For other actions, we need to hide items
+                    const startTimeStr = document.getElementById('modal-start-time').value;
+                    const startTime = new Date(startTimeStr);
+                    const expiryDate = new Date(startTime.getTime() + 24 * 60 * 60 * 1000);
+
+                    const presetPayload = {
+                        event_id: betData.event_id,
+                        expiry_at: expiryDate.toISOString()
+                    };
+
+                    if (afterTradeAction === 'remove_trade') {
+                        presetPayload.market_key = betData.market;
+                        presetPayload.selection_norm = betData.selection;
+                        lastData = lastData.filter(d => !(d.event_id === betData.event_id && d.market === betData.market && d.selection === betData.selection));
+                    } else if (afterTradeAction === 'remove_line') {
+                        presetPayload.market_key = betData.market;
+                        lastData = lastData.filter(d => !(d.event_id === betData.event_id && d.market === betData.market));
+                    } else if (afterTradeAction === 'remove_match') {
+                        // market_key remains null to hide whole event
+                        lastData = lastData.filter(d => d.event_id !== betData.event_id);
+                    }
+
+                    await fetch(`/api/v1/presets/${presetId}/hidden-items`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(presetPayload)
+                    });
+
+                    renderData(lastData);
+
+                } else {
+                    const error = await response.json();
+                    showToast(`Error: ${error.detail || 'Failed to register trade'}`, "error");
+                }
+            } catch (error) {
+                showToast(`Error: ${error.message}`, "error");
+            }
+        }
+
+        function applyFlashAnimations(oddsIncreased, oddsDecreased) {
+            // Apply flash-increase class to rows with increased odds
+            oddsIncreased.forEach(rowId => {
+                const rows = document.querySelectorAll(`tr[data-row-id="${rowId}"]`);
+                rows.forEach(row => {
+                    row.classList.remove('flash-decrease'); // Remove opposite animation if present
+                    row.classList.remove('flash-increase'); // Remove to restart animation
+                    // Force reflow to restart animation
+                    void row.offsetWidth;
+                    row.classList.add('flash-increase');
+                });
+            });
+
+            // Apply flash-decrease class to rows with decreased odds
+            oddsDecreased.forEach(rowId => {
+                const rows = document.querySelectorAll(`tr[data-row-id="${rowId}"]`);
+                rows.forEach(row => {
+                    row.classList.remove('flash-increase'); // Remove opposite animation if present
+                    row.classList.remove('flash-decrease'); // Remove to restart animation
+                    // Force reflow to restart animation
+                    void row.offsetWidth;
+                    row.classList.add('flash-decrease');
+                });
+            });
+        }
+
+        ws.onmessage = function (event) {
+            const response = JSON.parse(event.data);
+            const data = response.opportunities || response; // Handle both old and new format
+            const oddsIncreased = response.odds_increased || [];
+            const oddsDecreased = response.odds_decreased || [];
+
+            lastData = data;
+            renderData(data);
+            updateSortUI(); // Refresh UI indicators if data arrived while we had a sort set
+
+            // Apply flash animations after rendering
+            if (oddsIncreased.length > 0 || oddsDecreased.length > 0) {
+                // Small delay to ensure DOM is updated
+                setTimeout(() => applyFlashAnimations(oddsIncreased, oddsDecreased), 50);
+            }
+        };
+
+        ws.onclose = function () {
+            tbody.innerHTML = `<tr><td colspan="5" class="text-center py-10 text-error">Connection lost. Please refresh.</td></tr>`;
+        };
+    </script>
+    {% else %}
+    <div class="hero bg-base-100 rounded-box shadow-xl p-10">
+        <div class="hero-content text-center">
+            <div class="max-w-md">
+                <h1 class="text-3xl font-bold">Select a Preset</h1>
+                <p class="py-6">Choose a betting configuration preset to start scanning for opportunities.</p>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

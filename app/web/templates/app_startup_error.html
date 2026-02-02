@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Startup Error - Sports Bet Finder</title>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css" />
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <style>
+        .glass-card {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+    </style>
+</head>
+
+<body class="min-h-screen flex items-center justify-center bg-base-300">
+    <div class="card w-full max-w-2xl glass-card shadow-2xl m-4">
+        <div class="card-body">
+            <h2 class="card-title text-3xl font-bold mb-4 justify-center text-error">Startup Failed</h2>
+            <p class="text-center text-base-content/70 mb-6">The application encountered a critical error during startup
+                and could not initialize.</p>
+
+            <div class="alert alert-error mb-6 overflow-x-auto">
+                <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none"
+                    viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <div class="flex flex-col">
+                    <span class="font-bold">Error Details:</span>
+                    <pre class="text-xs mt-2 whitespace-pre-wrap">{{ error_message }}</pre>
+                </div>
+            </div>
+
+            <div class="alert alert-info shadow-lg mt-6">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                    class="stroke-current shrink-0 w-6 h-6">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <div>
+                    <h3 class="font-bold">Next Steps</h3>
+                    <div class="text-sm">Please check your server logs or save your <strong>.env</strong> (View
+                        Settings) configuration, then
+                        restart the application.</div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</body>
+
+</html>

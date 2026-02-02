@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }} - Sports Bet Finder</title>
+
+    <!-- DaisyUI & Tailwind (via CDN) -->
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css" />
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+
+    <!-- HTMX -->
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script src="https://unpkg.com/htmx.org/dist/ext/ws.js"></script>
+
+    <style>
+        /* Global UI Fixes for Clipping & Stacking */
+
+        /* Allow cards to show overflow for tooltips/dropdowns */
+        .card:not(.overflow-hidden-enforced) {
+            overflow: visible !important;
+        }
+
+        /* Ensure tables allow dropdowns to pop out from cells */
+        .table th,
+        .table td {
+            overflow: visible !important;
+        }
+
+        /* Stacking Logic for Dropdowns & Tooltips */
+
+        /* Boost z-index of the active dropdown to ensure it's above other grid items */
+        .dropdown:focus-within,
+        .dropdown:hover {
+            z-index: 50 !important;
+        }
+
+        .dropdown-content {
+            z-index: 100 !important;
+        }
+
+        .tooltip {
+            z-index: 40;
+        }
+
+        /* Ensure sidebar and its overlay are ALWAYS on top of everything else */
+        .drawer-side {
+            z-index: 1000 !important;
+        }
+
+        .drawer-overlay {
+            z-index: 0 !important;
+            /* LOWER than sidebar content */
+        }
+
+        /* FIX: Disable overlay on desktop to prevent blocking sidebar interactions */
+        @media (min-width: 1024px) {
+            .drawer-overlay {
+                display: none !important;
+                visibility: hidden !important;
+                pointer-events: none !important;
+                width: 0 !important;
+                height: 0 !important;
+                opacity: 0 !important;
+                background-color: transparent !important;
+            }
+
+            /* Ensure the sidebar itself doesn't have an overlay effect baked in */
+            .drawer-toggle:checked~.drawer-side>.drawer-overlay {
+                background-color: transparent !important;
+            }
+
+            .drawer-side {
+                z-index: 30 !important;
+                /* Reset to reasonable level for side-by-side layout */
+            }
+        }
+
+
+
+        /* Ensure navbar is above content to allow interaction */
+        .navbar {
+            position: sticky;
+            top: 0;
+            z-index: 100 !important;
+        }
+
+        /* Ensure the menu is ABOVE the overlay so it's clickable and clean */
+        .drawer-side .menu {
+            z-index: 1001 !important;
+            background-color: #1d232a !important;
+            /* Force solid dark background for the menu */
+        }
+
+        /* macOS Scrollbar Fix for Dropdowns */
+        .dropdown-content::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        .dropdown-content::-webkit-scrollbar-thumb {
+            background-color: oklch(var(--bc) / 0.2);
+            border-radius: 4px;
+        }
+
+        .dropdown-content::-webkit-scrollbar-track {
+            background-color: oklch(var(--b1));
+        }
+
+        /* Ensure touch scrolling works smoothly */
+        .dropdown-content {
+            -webkit-overflow-scrolling: touch;
+        }
+    </style>
+</head>
+
+<body class="min-h-screen bg-base-200">
+    <div id="main-drawer" class="drawer lg:drawer-open w-full max-w-full">
+        <input id="my-drawer-2" type="checkbox" class="drawer-toggle" />
+        <div class="drawer-content flex flex-col items-stretch justify-start w-full min-w-0">
+
+            <!-- Navbar -->
+            <div class="navbar bg-base-100 border-b border-base-300 w-full px-4">
+                <div class="flex-none">
+                    <!-- Mobile Hamburger -->
+                    <label for="my-drawer-2" class="btn btn-square btn-ghost drawer-button lg:hidden">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                            class="inline-block w-6 h-6 stroke-current">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M4 6h16M4 12h16M4 18h16"></path>
+                        </svg>
+                    </label>
+                    <!-- Desktop Toggle Button -->
+                    <button id="desktop-sidebar-toggle" class="btn btn-square btn-ghost hidden lg:inline-flex"
+                        title="Toggle Sidebar">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                            class="inline-block w-6 h-6 stroke-current">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M4 6h16M4 12h16M4 18h16"></path>
+                        </svg>
+                    </button>
+                </div>
+                <div class="flex-1">
+                    <span class="text-xl font-bold ml-2 lg:hidden">BetFinder</span>
+                </div>
+                <!-- Profile / Actions / Preset Selector -->
+                <div class="flex-none gap-2">
+                    {% if presets %}
+                    <select class="select select-bordered select-sm max-w-[150px] md:max-w-xs"
+                        onchange="window.location.href='/trade-feed?preset_id='+this.value">
+                        <option disabled {% if not current_preset %}selected{% endif %}>Preset</option>
+                        {% for preset in presets %}
+                        <option value="{{ preset.id }}" {% if current_preset and current_preset.id==preset.id
+                            %}selected{% endif %}>
+                            {{ preset.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="w-full flex-grow flex flex-col items-stretch justify-start pt-4 md:pt-10 px-0 md:px-6">
+                <!-- Content -->
+                <div class="w-full max-w-full flex flex-col items-center">
+                    {% block content %}{% endblock %}
+                </div>
+            </div>
+        </div>
+        <div class="drawer-side z-50">
+            <label for="my-drawer-2" aria-label="close sidebar" class="drawer-overlay"></label>
+
+            <!-- Sidebar container -->
+            <div class="w-80 min-h-full bg-base-100 text-base-content border-r border-base-300 flex flex-col">
+
+                <div class="p-4 flex flex-row justify-between items-center mb-2">
+                    <h1 class="text-2xl font-bold px-2">BetFinder</h1>
+                    <!-- Close icon for small screens -->
+                    <label for="my-drawer-2" class="btn btn-sm btn-circle btn-ghost lg:hidden">✕</label>
+                </div>
+
+                <ul class="menu px-4 py-0 w-full mb-auto">
+                    <li><a href="/"
+                            class="block hover:bg-base-200 {% if active == 'dashboard' %}active{% endif %}">Dashboard</a>
+                    </li>
+                    <li><a href="/trade-feed"
+                            class="block hover:bg-base-200 {% if active == 'trade_feed' %}active{% endif %}">Trade
+                            Feed</a></li>
+                    <li><a href="/fixtures"
+                            class="block hover:bg-base-200 {% if active == 'fixtures' %}active{% endif %}">Fixtures</a>
+                    </li>
+                    <li><a href="/presets-view"
+                            class="block hover:bg-base-200 {% if active == 'presets' %}active{% endif %}">Presets</a>
+                    </li>
+                    <li><a href="/bets-view"
+                            class="block hover:bg-base-200 {% if active == 'bets' %}active{% endif %}">My Bets</a></li>
+                    <li><a href="/bookmakers"
+                            class="block hover:bg-base-200 {% if active == 'bookmakers' %}active{% endif %}">Bookmakers</a>
+                    </li>
+
+                    <div class="divider my-4"></div>
+                    <li><a href="/logout" class="block text-error hover:bg-base-200">Logout</a></li>
+                </ul>
+
+                {% if is_dev %}
+                <div class="bg-base-200 w-full pb-10">
+                    <div class="divider px-4">DEV MODE</div>
+                    <ul class="menu px-4 py-0 w-full">
+                        <li class="menu-title opacity-70">Data</li>
+                        <li><a href="/dev/sports">View Sports</a></li>
+                        <li><a href="/dev/markets">View Markets</a></li>
+                        <li><a href="/dev/odds">View Odds</a></li>
+                        <li><a href="/dev/mappings">View Mappings</a></li>
+                        <li><a href="/dev/events">View Events</a></li>
+
+                        <li class="menu-title opacity-70 mt-4">Jobs</li>
+                        <li><button class="cursor-pointer text-left w-full hover:bg-base-300"
+                                hx-post="/dev/jobs/fetch-sports" hx-swap="none"
+                                hx-on::after-request="if(event.detail.successful) showToast('Fetch Sports Job Triggered', 'success')">Fetch
+                                Sports</button></li>
+                        <li><button class="cursor-pointer text-left w-full hover:bg-base-300"
+                                hx-post="/dev/jobs/preset-sync" hx-swap="none"
+                                hx-on::after-request="if(event.detail.successful) showToast('Preset Sync Job Triggered', 'success')">Preset
+                                Sync</button></li>
+                        <li><button class="cursor-pointer text-left w-full hover:bg-base-300"
+                                hx-post="/dev/jobs/analyze-odds" hx-swap="none"
+                                hx-on::after-request="if(event.detail.successful) showToast('Analyze Odds Job Triggered', 'success')">Analyze
+                                Odds</button></li>
+                        <li><button class="cursor-pointer text-left w-full hover:bg-base-300"
+                                hx-post="/dev/jobs/settle-bets" hx-swap="none"
+                                hx-on::after-request="if(event.detail.successful) showToast('Bet Settlement Job Triggered', 'success')">Settle
+                                Bets</button></li>
+                        <li><button class="cursor-pointer text-left w-full hover:bg-base-300"
+                                hx-post="/dev/jobs/auto-trade" hx-swap="none"
+                                hx-on::after-request="if(event.detail.successful) showToast('Auto Trade Job Triggered', 'success')">Auto
+                                Trade</button></li>
+                        <li><button class="cursor-pointer text-left w-full hover:bg-base-300"
+                                hx-post="/dev/jobs/global-odds-sync" hx-swap="none"
+                                hx-on::after-request="if(event.detail.successful) showToast('Global Odds Sync Job Triggered', 'success')">Global
+                                Odds Sync</button></li>
+                        <li><button class="cursor-pointer text-left w-full hover:bg-base-300"
+                                hx-post="/dev/jobs/get-results" hx-swap="none"
+                                hx-on::after-request="if(event.detail.successful) showToast('Get Results Job Triggered', 'success')">Get
+                                Results</button></li>
+                        <li><button class="cursor-pointer text-left w-full hover:bg-base-300"
+                                hx-post="/dev/jobs/cleanup-hidden" hx-swap="none"
+                                hx-on::after-request="if(event.detail.successful) showToast('Cleanup Hidden Job Triggered', 'success')">Cleanup
+                                Hidden</button></li>
+                    </ul>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div id="toast-container" class="toast toast-top toast-end z-[9999]"></div>
+
+    <script>
+        document.getElementById('desktop-sidebar-toggle').addEventListener('click', () => {
+            const drawer = document.getElementById('main-drawer');
+            drawer.classList.toggle('lg:drawer-open');
+        });
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+
+            // DaisyUI alert classes based on type
+            const alertClass = {
+                'info': 'alert-info',
+                'success': 'alert-success',
+                'error': 'alert-error',
+                'warning': 'alert-warning'
+            }[type] || 'alert-info';
+
+            toast.innerHTML = `
+                <div class="alert ${alertClass} shadow-lg text-sm">
+                    <span>${message}</span>
+                </div>
+            `;
+
+            container.appendChild(toast);
+
+            // Auto dismiss after 5s
+            setTimeout(() => {
+                toast.classList.add('transition-opacity', 'duration-500', 'opacity-0');
+                setTimeout(() => toast.remove(), 500);
+            }, 5000);
+        }
+
+        // Global Date/Time Helper
+        window.formatLocalTime = function (isoString, options = {}) {
+            if (!isoString) return '-';
+            // Ensure UTC parsing if no suffix
+            if (isoString.indexOf('Z') === -1 && isoString.indexOf('+') === -1) {
+                isoString += 'Z';
+            }
+
+            const date = new Date(isoString);
+            const userLocale = navigator.language || 'en-US';
+
+            const defaultOpts = {
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            };
+            // Merge format options
+            const formatOptions = { ...defaultOpts, ...(options.format || options) };
+            const timeStr = date.toLocaleString(userLocale, formatOptions);
+
+            const utcStr = date.toUTCString();
+            const tooltipDir = options.tooltipClass || 'tooltip-bottom';
+
+            return `<span class="tooltip ${tooltipDir} inline-block" data-tip="${utcStr}">${timeStr}</span>`;
+        };
+    </script>
+</body>
+
+</html>
