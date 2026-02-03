@@ -24,8 +24,7 @@ services:
         condition: service_healthy
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-betfinder}
-    volumes:
-      - ./.env:/app/.env:ro
+
 
   app:
     build: .
@@ -50,8 +49,7 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - PRESET_SYNC_INTERVAL_HOURS=${PRESET_SYNC_INTERVAL_HOURS:-6}
       - PORT=8000
-    volumes:
-      - ./.env:/app/.env:ro
+
 
 volumes:
   postgres_data:
