@@ -9,6 +9,8 @@ from app.services.standardizer import DataStandardizer
 from app.db.models import Sport, League, Event, Market, Odds, Bookmaker
 from app.repositories.base import BaseRepository
 from app.core.config import settings
+from app.services.analytics.trade_finder import TradeFinderService
+from app.services.notifications.manager import NotificationManager
 
 logger = logging.getLogger(__name__)
 
@@ -159,6 +161,35 @@ class DataIngester:
         
         logger.info(f"Completed sync for preset: {preset.name}")
 
+        # --- Notification Trigger ---
+        # After syncing data, run the trade finder and notify if configured
+        try:
+            # Check config first
+            notif_enabled = preset.other_config.get("notification_new_bet", "true") # Default "true" as per schema
+            if notif_enabled == "true":
+                logger.info(f"Checking for new trades to notify for preset: {preset.name}")
+                trade_finder = TradeFinderService()
+                # Scan opportunities for this preset
+                # API Only? Usually auto-trade uses api_only=True, but notifications might want all.
+                # Let's use api_only=False to catch all Manual/Source trades too if desired, 
+                # but typically we only notify on actionable stuff. 
+                # The user request didn't specify, but "fetch a random odds opportunity" implies checking the finder.
+                opportunities = await trade_finder.scan_opportunities(db, preset.id)
+                
+                if opportunities:
+                    notification_manager = NotificationManager(db)
+                    count_sent = 0
+                    for opp in opportunities:
+                        # We only notify high quality trades perhaps? 
+                        # The scan_opportunities already filters by preset criteria (min edge, min odds etc).
+                        # So any result here IS a match.
+                        await notification_manager.send_trade_notification(preset, opp)
+                        count_sent += 1
+                    
+                    logger.info(f"Notification check complete. Processed {len(opportunities)} opportunities.")
+        except Exception as e:
+            logger.error(f"Error in notification trigger for preset {preset.name}: {e}")
+
     async def _process_odds_data(self, db: AsyncSession, odds_data: List[Dict[str, Any]]):
         for event_data in odds_data:
             event_id = event_data["id"]
@@ -229,11 +260,17 @@ class DataIngester:
                         await db.commit()
                         await db.refresh(market)
                         
-                    # Delete existing odds for this market and bookmaker
-                    # TODO WHy???
-                    await db.execute(
-                        delete(Odds).where(Odds.market_id == market.id, Odds.bookmaker_id == bookmaker.id)
+                    # Fetch existing odds for this market and bookmaker
+                    existing_odds_result = await db.execute(
+                        select(Odds).where(Odds.market_id == market.id, Odds.bookmaker_id == bookmaker.id)
                     )
+                    existing_odds_list = existing_odds_result.scalars().all()
+                    
+                    # Create a map for quick lookup: (selection, point) -> Odds object
+                    # Point can be None, so we handle that.
+                    existing_odds_map = {
+                        (o.selection, o.point): o for o in existing_odds_list
+                    }
                     
                     for outcome in m_data.get("outcomes", []):
                         price = outcome["price"]
@@ -270,19 +307,35 @@ class DataIngester:
                                 }
                             )
                         
-                        new_odd = Odds(
-                            market_id=market.id,
-                            bookmaker_id=bookmaker.id,
-                            selection=name,
-                            normalized_selection=normalized_name,
-                            price=price,
-                            point=point,
-                            url=url,
-                            event_sid=event_sid,
-                            market_sid=market_sid,
-                            sid=outcome_sid,
-                            bet_limit=bet_limit
-                        )
-                        db.add(new_odd)
+                        # Check if odds exist
+                        existing_odd = existing_odds_map.get((name, point))
+                        
+                        if existing_odd:
+                            # Update existing
+                            existing_odd.price = price
+                            existing_odd.url = url
+                            existing_odd.event_sid = event_sid
+                            existing_odd.market_sid = market_sid
+                            existing_odd.sid = outcome_sid
+                            existing_odd.bet_limit = bet_limit
+                            existing_odd.normalized_selection = normalized_name # Update normalization just in case
+                            # TimestampMixin should handle updated_at automatically on commit if the object is dirty
+                            db.add(existing_odd)
+                        else:
+                            # Create new
+                            new_odd = Odds(
+                                market_id=market.id,
+                                bookmaker_id=bookmaker.id,
+                                selection=name,
+                                normalized_selection=normalized_name,
+                                price=price,
+                                point=point,
+                                url=url,
+                                event_sid=event_sid,
+                                market_sid=market_sid,
+                                sid=outcome_sid,
+                                bet_limit=bet_limit
+                            )
+                            db.add(new_odd)
                 
         await db.commit()

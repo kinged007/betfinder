@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str
     
     # External APIs
-    THE_ODDS_API_KEY: str
+    THE_ODDS_API_KEY: str = "changeme"
     THE_ODDS_API_REGIONS: str = "eu,us,uk"
     
     # Notifications

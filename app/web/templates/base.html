@@ -251,6 +251,10 @@
                                 hx-post="/dev/jobs/cleanup-hidden" hx-swap="none"
                                 hx-on::after-request="if(event.detail.successful) showToast('Cleanup Hidden Job Triggered', 'success')">Cleanup
                                 Hidden</button></li>
+                        <li><button class="cursor-pointer text-left w-full hover:bg-base-300"
+                                hx-post="/dev/jobs/test-notification" hx-swap="none"
+                                hx-on::after-request="if(event.detail.successful) showToast('Test Notification Triggered', 'success')">Test
+                                Notification</button></li>
                     </ul>
                 </div>
                 {% endif %}

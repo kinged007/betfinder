@@ -17,7 +17,10 @@ from app.services.scheduler import (
     job_global_odds_live_sync,
     job_get_results
 )
-from app.db.models import Sport, Market, Mapping, Event, League, Odds, Bookmaker
+from app.db.models import Sport, Market, Mapping, Event, League, Odds, Bookmaker, Preset
+from app.services.notifications.manager import NotificationManager
+from app.services.analytics.trade_finder import TradeOpportunity
+import random
 from app.services.bookmakers.base import BookmakerFactory, APIBookmaker
 from datetime import datetime, timedelta
 from pydantic import BaseModel
@@ -97,6 +100,65 @@ async def trigger_get_results():
     try:
         await job_get_results()
         return {"status": "success", "message": "Get Results job triggered"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@router.post("/jobs/test-notification", dependencies=[Depends(check_dev_mode)])
+async def trigger_test_notification(db: AsyncSession = Depends(get_db)):
+    try:
+        # Fetch a random odd to simulate a trade
+        # Just grab one that has existing relations
+        stmt = (
+            select(Odds, Market, Event, Bookmaker, Sport, League)
+            .join(Odds.market)
+            .join(Market.event)
+            .join(Odds.bookmaker)
+            .outerjoin(Event.league)
+            .outerjoin(League.sport)
+            .limit(100) # Grab a few
+        )
+        result = await db.execute(stmt)
+        rows = result.all()
+        
+        if not rows:
+            return {"status": "error", "message": "No odds found to test with."}
+            
+        # Pick random
+        row = random.choice(rows)
+        odd, market, event, bookmaker, sport, league = row
+        
+        # Create a mock Preset
+        # Using a specialized ID for testing so it might duplicate if we use real preset ID logic
+        # But for test button, we just want to see the notif.
+        
+        mock_preset = Preset(
+            id=999999,
+            name="TEST NOTIFICATION PRESET",
+            other_config={"notification_new_bet": "true"}
+        )
+        
+        # Mock Trade Opportunity
+        edge = 0.05
+        if odd.true_odds:
+            edge = (odd.price / odd.true_odds) - 1.0
+            
+        opp = TradeOpportunity(
+            odd=odd,
+            market=market,
+            event=event,
+            bookmaker=bookmaker,
+            sport=sport,
+            league=league,
+            has_bet=False,
+            edge=edge
+        )
+        
+        # Send
+        manager = NotificationManager(db)
+        
+        await manager.send_trade_notification(mock_preset, opp)
+        
+        return {"status": "success", "message": f"Test Notification Sent for {event.home_team} vs {event.away_team}"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 

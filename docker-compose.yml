@@ -15,17 +15,6 @@ services:
       timeout: 5s
       retries: 5
 
-  migrate:
-    build: .
-    container_name: betfinder-migrate
-    command: alembic upgrade head
-    depends_on:
-      db:
-        condition: service_healthy
-    environment:
-      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-betfinder}
-
-
   app:
     build: .
     container_name: betfinder-app
@@ -33,10 +22,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      migrate:
-        condition: service_completed_successfully
     ports:
-      - "8000:8000"
+      - "8123:8123"
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-betfinder}
       - ENVIRONMENT=production
@@ -48,8 +35,7 @@ services:
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - PRESET_SYNC_INTERVAL_HOURS=${PRESET_SYNC_INTERVAL_HOURS:-6}
-      - PORT=8000
-
+      - PORT=8123
 
 volumes:
   postgres_data:

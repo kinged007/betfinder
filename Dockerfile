@@ -36,7 +36,11 @@ ENV PYTHONUNBUFFERED=1
 ENV ENVIRONMENT=production
 
 # Expose the port the app runs on
-EXPOSE 8000
+EXPOSE 8123
 
-# Run the application
-CMD ["prod"]
+# Copy startup script and ensure it is executable
+COPY scripts/start.sh /app/scripts/start.sh
+RUN chmod +x /app/scripts/start.sh && sed -i 's/\r$//' /app/scripts/start.sh
+
+# Run the application using the startup script
+CMD ["/app/scripts/start.sh"]
