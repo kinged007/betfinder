@@ -39,4 +39,4 @@ ENV ENVIRONMENT=production
 EXPOSE 8000
 
 # Run the application
-CMD ["uv", "run", "prod"]
+CMD ["prod"]

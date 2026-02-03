@@ -18,6 +18,7 @@ class ConnectionManager:
         self.sync_tasks: Dict[int, asyncio.Task] = {} # Track running sync tasks
         self.trade_finder = TradeFinderService()
         self.is_running = False
+        self._loop_task: asyncio.Task | None = None
 
     async def connect(self, websocket: WebSocket, preset_id: int):
         await websocket.accept()
@@ -77,11 +78,35 @@ class ConnectionManager:
         for conn in to_remove:
             self.disconnect(conn, preset_id)
 
+    async def stop(self):
+        logger.info("Stopping Connection Manager...")
+        self.is_running = False
+        
+        # Cancel Global Loop
+        if self._loop_task:
+            self._loop_task.cancel()
+            try:
+                await self._loop_task
+            except asyncio.CancelledError:
+                pass
+            self._loop_task = None
+            
+        # Cancel all running sync tasks
+        for preset_id, task in self.sync_tasks.items():
+            if not task.done():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+        self.sync_tasks.clear()
+        logger.info("Connection Manager Stopped.")
+
     def start_global_loop(self):
         if self.is_running:
             return
         self.is_running = True
-        asyncio.create_task(self._global_poll_loop())
+        self._loop_task = asyncio.create_task(self._global_poll_loop())
 
     async def _global_poll_loop(self):
         logger.info("Starting Global Trade Feed Polling Loop")

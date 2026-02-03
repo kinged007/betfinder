@@ -121,6 +121,12 @@ async def lifespan(app: FastAPI):
         stop_scheduler()
     except:
         pass
+
+    try:
+        from app.services.connection_manager import manager
+        await manager.stop()
+    except Exception as e:
+        logger.error(f"Error stopping connection manager: {e}")
     
     # Close database engine pool
     logger.info("Disposing database engine...")

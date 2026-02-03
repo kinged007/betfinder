@@ -49,6 +49,7 @@ services:
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - PRESET_SYNC_INTERVAL_HOURS=${PRESET_SYNC_INTERVAL_HOURS:-6}
+      - PORT=8000
     volumes:
       - ./.env:/app/.env:ro
 
