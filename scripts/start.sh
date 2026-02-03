@@ -3,6 +3,14 @@ set -e
 
 # Run migrations
 echo "Running database migrations..."
+pwd
+ls -la
+if [ -d "alembic" ]; then
+    echo "alembic directory exists"
+    ls -la alembic
+else
+    echo "alembic directory NOT found"
+fi
 alembic upgrade head
 
 # Start application
