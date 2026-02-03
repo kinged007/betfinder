@@ -7,7 +7,10 @@
             <h1 class="text-3xl font-bold">{{ title }}</h1>
             <p class="text-sm opacity-70">Development view for exploring and refreshing odds data.</p>
         </div>
-        <div class="flex gap-2">
+        <div class="flex gap-2 items-center">
+            <div id="live-indicator" class="badge badge-success gap-1 hidden animate-pulse">
+                Live
+            </div>
             <a href="/" class="btn btn-outline btn-sm">Dashboard</a>
             <a href="/dev/events" class="btn btn-outline btn-sm">View Events</a>
         </div>
@@ -61,55 +64,72 @@
                     {% endfor %}
                 </tr>
             </thead>
-            <tbody>
-                {% for item in rows %}
-                <tr class="hover group">
-                    <td class="text-xs opacity-50 font-mono">{{ item.id }}</td>
-                    <td class="max-w-[200px]">
-                        <div class="font-bold text-xs truncate">{{ item.game }}</div>
-                        <div class="text-[10px] opacity-60 local-time" data-utc-time="{{ item.start_time }}"></div>
-                    </td>
-                    <td class="text-[10px] opacity-50 uppercase font-mono">{{ item.sport }}</td>
-                    <td class="text-[10px] font-medium opacity-70">{{ item.market }}</td>
-                    <td>
-                        <div class="font-bold text-xs text-primary">{{ item.selection }}</div>
-                        <div class="text-[9px] opacity-40 uppercase font-mono">{{ item.selection_norm }}</div>
-                    </td>
-                    <td>
-                        <span class="badge badge-outline badge-xs">{{ item.bookie }}</span>
-                    </td>
-                    <td class="font-mono font-bold text-accent">{{ "%.2f"|format(item.price) }}</td>
-                    <td class="font-mono text-xs opacity-70">
-                        {% if item.point is not none %}
-                        {{ '+' if item.point > 0 else '' }}{{ item.point }}
-                        {% else %}
-                        -
-                        {% endif %}
-                    </td>
-                    <td class="text-[10px] opacity-50">{{ item.prob or '-' }}</td>
-                    <td class="text-[10px] font-bold">{{ item.true_odds or '-' }}</td>
-                    <td
-                        class="text-sm font-bold {% if item.edge and item.edge > 0 %}text-success{% elif item.edge %}text-error{% endif %}">
-                        {{ item.edge or '-' }}{% if item.edge %}%{% endif %}
-                    </td>
-                    <td>
-                        <button class="btn btn-xs btn-primary opacity-0 group-hover:opacity-100 transition-opacity"
-                            onclick="quickBet({{ item.id }}, this)">
-                            Bet 10€
-                        </button>
-                    </td>
-                </tr>
-                {% else %}
-                <tr>
-                    <td colspan="{{ headers|length }}" class="text-center py-20 opacity-50 italic text-sm">
-                        No odds matching the current filters.
-                    </td>
-                </tr>
-                {% endfor %}
+            <tbody id="odds-table-body">
+                {% include "partials/dev_odds_rows.html" %}
             </tbody>
         </table>
     </div>
 </div>
+
+<!-- Add Alpine Morph (if not already in base, but dev_odds extends base so it is) -->
+<!-- Assuming base.html has Alpine & Morph based on previous tasks -->
+
+<script>
+    // WebSocket for Live Updates
+    let ws;
+    let reconnectInterval = 3000;
+
+    function connectWs() {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const bookmakerId = "{{ current_bookmaker_id or '' }}";
+        const futureOnly = "{{ 'true' if future_only else 'false' }}";
+
+        // Build WS URL
+        const wsUrl = `${protocol}//${window.location.host}/dev/odds/ws?bookmaker_id=${bookmakerId}&future_only=${futureOnly}`;
+
+        ws = new WebSocket(wsUrl);
+
+        ws.onopen = () => {
+            console.log("Connected to Odds WS");
+            document.getElementById('live-indicator').classList.remove('hidden');
+        };
+
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            if (data.html) {
+                // Morph the table body
+                // We wrap it in tbody to ensure morph matches outer element (standard Alpine Morph behavior for outerHTML)
+                // But wait, our partial is just rows.
+                // If we replace the innerHTML of tbody, we don't need Morph for the whole table, just the body.
+                // But Morph is better for preserving state.
+                // Let's assume server sends back the inner rows HTML.
+                // We construct the full new tbody string.
+
+                const newBody = `<tbody id="odds-table-body">${data.html}</tbody>`;
+                const currentBody = document.getElementById('odds-table-body');
+                if (currentBody) {
+                    Alpine.morph(currentBody, newBody);
+                    // Re-run local time formatting
+                    renderLocalTimes();
+                }
+            }
+        };
+
+        ws.onclose = () => {
+            console.log("WS Disconnected. Reconnecting...");
+            document.getElementById('live-indicator').classList.add('hidden');
+            setTimeout(connectWs, reconnectInterval);
+        };
+
+        ws.onerror = (err) => {
+            console.error("WS Error:", err);
+            ws.close();
+        };
+    }
+
+    // Start WS on load
+    document.addEventListener('DOMContentLoaded', connectWs);
+</script>
 
 <!-- Modal for Logs -->
 <dialog id="log_modal" class="modal">

@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from app.routers import sports, bookmakers, presets, bets, trade, views, events, public_views
+from app.routers import sports, bookmakers, presets, bets, views, events, public_views, ws
 from app.routers.views import templates
 from app.core.security import AppStartupFailedException, AppStartupLoadingException, NotAuthenticatedException
 from app.services.notifications.telegram import TelegramNotifier
@@ -140,7 +140,7 @@ app.include_router(sports.router, prefix=settings.API_V1_STR, tags=["Sports"])
 app.include_router(bookmakers.router, prefix=settings.API_V1_STR, tags=["Bookmakers"])
 app.include_router(presets.router, prefix=settings.API_V1_STR, tags=["Presets"])
 app.include_router(bets.router, prefix=settings.API_V1_STR, tags=["Bets"])
-app.include_router(trade.router, prefix="/ws", tags=["Tradefeed"])
+app.include_router(ws.router, prefix="/ws", tags=["Websocket"])
 
 
 if settings.is_dev:

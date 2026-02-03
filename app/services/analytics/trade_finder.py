@@ -6,7 +6,7 @@ from sqlalchemy import select, and_, or_
 from sqlalchemy.orm import selectinload
 from app.db.models import PresetHiddenItem, Event, Odds, Bookmaker, Preset, Market, Sport, League
 from app.services.analytics.edge_calculator import EdgeCalculator
-from app.services.bookmakers.base import BookmakerFactory
+from app.services.bookmakers.base import BookmakerFactory, APIBookmaker
 from app.core.config import settings
 
 import logging
@@ -51,13 +51,8 @@ class TradeFinderService:
         pass
 
     async def scan_opportunities(self, db: AsyncSession, preset_id: int, api_only: bool = False) -> List[TradeOpportunity]:
-        # Fetch preset with hidden items eagerly or separately
-        # Load preset with hidden items
-        result = await db.execute(
-            select(Preset)
-            .options(selectinload(Preset.hidden_items))
-            .where(Preset.id == preset_id)
-        )
+        # Fetch preset
+        result = await db.execute(select(Preset).where(Preset.id == preset_id))
         preset = result.scalar_one_or_none()
         
         if not preset or not preset.active:
@@ -71,8 +66,21 @@ class TradeFinderService:
         
         # Build query
         # We start from Odds and join relationships explicitly
+        from app.db.models import Bet
+
         query = (
-            select(Odds, Market, Event, Bookmaker, Sport, League)
+            select(
+                Odds, Market, Event, Bookmaker, Sport, League,
+                # Subquery/Join check for existing bet
+                # We can do this via an outer join or exists, but exists is cleaner for a boolean flag
+                # However, to be efficient we can just left join distinct bets
+                select(Bet.id).where(
+                    Bet.event_id == Event.id,
+                    Bet.bookmaker_id == Bookmaker.id,
+                    Bet.market_key == Market.key,
+                    Bet.selection == Odds.normalized_selection
+                ).limit(1).exists().label("has_bet")
+            )
             .select_from(Odds)
             .join(Odds.market)
             .join(Market.event)
@@ -82,9 +90,7 @@ class TradeFinderService:
         )
         
         # Essential Filters
-        query = query.where(
-            Event.active == True
-        )
+        query = query.where(Event.active == True)
 
         # Benchmarking: Filter for items with true odds unless ignored
         if not preset.ignore_benchmarks:
@@ -102,19 +108,19 @@ class TradeFinderService:
         if preset.bookmakers:
             query = query.where(Bookmaker.key.in_(preset.bookmakers))
             
-        # # Preset Filters: Leagues
+        # Preset Filters: Leagues
         if preset.leagues:
             query = query.where(Event.league_key.in_(preset.leagues))
             
-        # # Preset Filters: Markets
+        # Preset Filters: Markets
         if preset.markets:
             query = query.where(Market.key.in_(preset.markets))
             
-        # # Preset Filters: Selections (normalized)
+        # Preset Filters: Selections (normalized)
         if preset.selections:
             query = query.where(Odds.normalized_selection.in_(preset.selections))
             
-        # # Preset Filters: Odds Range
+        # Preset Filters: Odds Range
         if preset.min_odds:
             query = query.where(Odds.price >= preset.min_odds)
         if preset.max_odds:
@@ -127,64 +133,52 @@ class TradeFinderService:
             query = query.where(Event.commence_time >= now)
             # Pre-Game: Hours Before Min/Max
             if preset.hours_before_min is not None:
-                # query = query.where(Event.commence_time >= now - timedelta(hours=preset.hours_before_min))
                 query = query.where(Event.commence_time > now + timedelta(hours=preset.hours_before_min))
             if preset.hours_before_max is not None:
-                # query = query.where(Event.commence_time <= now + timedelta(hours=preset.hours_before_max))
                 query = query.where(Event.commence_time < now + timedelta(hours=preset.hours_before_max))
-            
+
+        # Hidden Items Filtering (SQL side)
+        # We exclude rows where there is a matching HiddenItem for this preset
+        # Hidden Logic:
+        # 1. Hide Event if (hidden.event_id == event.id AND hidden.market_key IS NULL)
+        # 2. Hide Market if (hidden.event_id == event.id AND hidden.market_key == market.key AND hidden.selection_norm IS NULL)
+        # 3. Hide Selection if (hidden.event_id == event.id AND hidden.market_key == market.key AND hidden.selection_norm == odds.normalized_selection)
         
+        # Using NOT EXISTS involves complex OR logic.
+        # Ideally: NOT EXISTS (SELECT 1 FROM hidden_items WHERE hidden.preset_id = preset.id AND ...)
+        
+        query = query.where(
+            ~select(PresetHiddenItem.id).where(
+                PresetHiddenItem.preset_id == preset.id,
+                PresetHiddenItem.event_id == Event.id,
+                or_(
+                    PresetHiddenItem.market_key.is_(None),  # Hide entire event
+                    and_(
+                        PresetHiddenItem.market_key == Market.key,
+                        PresetHiddenItem.selection_norm.is_(None) # Hide market
+                    ),
+                    and_(
+                        PresetHiddenItem.market_key == Market.key,
+                        PresetHiddenItem.selection_norm == Odds.normalized_selection # Hide selection
+                    )
+                )
+            ).exists()
+        )
+            
         result = await db.execute(query)
         rows = result.all()
-        # Optimize by getting all existing bets for these events
-        event_ids = list(set(row[2].id for row in rows))
-        existing_bets = []
-        if event_ids:
-            from app.db.models import Bet
-            result = await db.execute(select(Bet).where(Bet.event_id.in_(event_ids)))
-            existing_bets = result.scalars().all()
 
         opportunities = []
-        for odd, market, event, bookmaker, sport, league in rows:
-            # Check Hidden Items FIRST
-            is_hidden = False
-            for hidden in preset.hidden_items:
-                # Basic check: Event ID must match
-                if hidden.event_id == event.id:
-                    # Check Level 1: Hide Event (market_key is None)
-                    if hidden.market_key is None:
-                        is_hidden = True
-                        break
-                    
-                    # Check Level 2: Hide Market (market_key matches, selection optional)
-                    if hidden.market_key == market.key:
-                        # If selection is None, hide whole market
-                        if hidden.selection_norm is None:
-                            is_hidden = True
-                            break
-                        
-                        # Check Level 3: Hide Specific Selection
-                        if hidden.selection_norm == odd.normalized_selection:
-                            is_hidden = True
-                            break
-            if is_hidden:
-                continue
-
-            # Check if bet exists
-            has_bet = any(
-                b.event_id == event.id and 
-                b.bookmaker_id == bookmaker.id and 
-                b.market_key == market.key and 
-                b.selection == odd.normalized_selection
-                for b in existing_bets
-            )
+        for odd, market, event, bookmaker, sport, league, has_bet in rows:
+            # We already filtered has_bet in SQL (as a boolean flag)
+            # And hidden items are filtered out in SQL
 
             # Final Edge calculation and check
-            # Edge = (price / true_odds) - 1
             if odd.true_odds:
                 edge = (odd.price / odd.true_odds) - 1.0
             else:
                 edge = None
+            
             if not odd.implied_probability:
                 odd.implied_probability = 1 / odd.price
             
@@ -195,12 +189,9 @@ class TradeFinderService:
                 if preset.max_edge is not None and (edge * 100) > preset.max_edge:
                     continue
             elif preset.min_edge is not None or preset.max_edge is not None:
-                # If we have edge filters but no edge (no true odds), skip unless ignore_benchmarks is handled
-                # Actually, if the query includes items without true_odds (ignore_benchmarks=True),
-                # but the user still set a min_edge, we should probably skip those items.
                 continue
             
-            # Preset Filters: Probability Range (implied probability is stored as decimal, e.g., 0.5 = 50%)
+            # Preset Filters: Probability Range
             if preset.min_probability is not None and odd.implied_probability is not None:
                 if (odd.implied_probability * 100) < preset.min_probability:
                     continue
@@ -219,7 +210,7 @@ class TradeFinderService:
                 edge=edge
             ))
             
-        return opportunities[:100] # TODO: Remove this limit??
+        return opportunities[:100]
 
     async def sync_live_odds(self, db: AsyncSession, opportunities: List[TradeOpportunity]) -> None:
         """
@@ -247,16 +238,17 @@ class TradeFinderService:
                 if not bookmaker_model or not bookmaker_model.config:
                     continue
                 
-                # Only process API bookmakers
-                if bookmaker_model.model_type != "api":
-                    continue
-
                 # Initialize bookmaker instance
+                # We instantiate first to check if it's an APIBookmaker, making this robust against DB type errors
                 bookmaker_instance = BookmakerFactory.get_bookmaker(
                     bookmaker_key, 
                     bookmaker_model.config,
                     db
                 )
+                
+                # Only process API bookmakers (Class check is more reliable than DB string)
+                if not isinstance(bookmaker_instance, APIBookmaker):
+                    continue
                 
                 # Filter events that should be synced based on throttling
                 events_to_sync = set()
@@ -290,39 +282,65 @@ class TradeFinderService:
             )
             
             # Call obtain_odds for this bookmaker
+            # This API call fetches fresh data
             raw_odds = await bookmaker_instance.obtain_odds(
                 sport_key=sport_key,
                 event_ids=event_ids,
             )
             
-            # Update database with new odds
+            if not raw_odds:
+                return 0
+
+            # Optimization: Bulk fetch existing odds for update
+            # We want to find Odds matching (ext_event_id, market_key, sel/sel_norm) for this bookmaker
+            
+            # Get event IDs from response to scope our query
+            received_event_ids = list(set([entry.get("external_event_id") for entry in raw_odds if entry.get("external_event_id")]))
+            
+            stmt = (
+                select(Odds, Market.event_id, Market.key)
+                .join(Market).join(Event)
+                .where(
+                    Event.id.in_(received_event_ids),
+                    Odds.bookmaker_id == bookmaker_model.id
+                )
+            )
+            res = await db.execute(stmt)
+            existing_rows = res.all()
+            
+            # Build Lookup Map
+            # Keys: (ext_event_id, market_key, normalized_selection) -> Odds Object
+            # Also support exact selection lookup as fallback? 
+            # Ideally we rely on normalized_selection, but raw_odds might have 'selection'.
+            # We will map both:
+            # (ev, mkt, sel) -> Odd
+            # (ev, mkt, norm_sel) -> Odd
+            
+            lookup_map = {}
+            for odd, ev_id, mkt_key in existing_rows:
+                # Key 1: Normalized
+                if odd.normalized_selection:
+                    lookup_map[(ev_id, mkt_key, odd.normalized_selection)] = odd
+                # Key 2: Exact
+                lookup_map[(ev_id, mkt_key, odd.selection)] = odd
+            
             total_updated = 0
             for entry in raw_odds:
                 ext_event_id = entry.get("external_event_id")
                 mkt_key = entry.get("market_key")
                 sel = entry.get("selection")
+                # Ensure we have norm sel if possible, or we rely on exact match
+                # Standardizer usually handles normalization before this step? 
+                # obtain_odds returns "selection" usually.
+                
                 new_price = entry.get("price")
                 new_point = entry.get("point")
                 
-                # Find existing record for this bookmaker/event/market/selection
-                stmt = (
-                    select(Odds)
-                    .join(Market).join(Event)
-                    .where(
-                        Event.id == ext_event_id,
-                        Market.key == mkt_key,
-                        Odds.bookmaker_id == bookmaker_model.id,
-                        or_(Odds.selection == sel, Odds.normalized_selection == sel)
-                    )
-                )
-                
-                if new_point is not None:
-                    stmt = stmt.where(Odds.point == new_point)
-                
-                res = await db.execute(stmt)
-                odds_record = res.scalars().first()
+                # Try finding existing record
+                odds_record = lookup_map.get((ext_event_id, mkt_key, sel))
                 
                 if odds_record:
+                    # Update fields
                     odds_record.price = new_price
                     odds_record.point = new_point
                     
@@ -338,7 +356,7 @@ class TradeFinderService:
             
             logger.info(f"Sync complete for {bookmaker_model.key}. Updated {total_updated} odds.")
             
-            # Record successful sync for all events
+            # Record successful sync for all events (even if no odds updated, we checked)
             for event_id in event_ids:
                 bookmaker_instance.record_sync(event_id)
             

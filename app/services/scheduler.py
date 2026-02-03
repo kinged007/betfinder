@@ -38,49 +38,51 @@ async def job_preset_sync():
     logger.info("Starting scheduled Preset Data Sync job...")
     
     async with AsyncSessionLocal() as db:
-        # 1. Fetch active presets
-        result = await db.execute(select(Preset).where(Preset.active == True))
-        presets = result.scalars().all()
-        
+        # Optimization: Filter due presets in SQL
         now = datetime.now(timezone.utc)
         interval = timedelta(hours=settings.PRESET_SYNC_INTERVAL_HOURS)
+        cutoff = now - interval
+        
+        stmt = select(Preset).where(
+            Preset.active == True,
+            or_(
+                Preset.last_sync_at == None,
+                Preset.last_sync_at < cutoff
+            )
+        )
+        result = await db.execute(stmt)
+        presets = result.scalars().all()
+        
+        if not presets:
+            logger.info("No presets due for sync.")
+            return
+
+        logger.info(f"Found {len(presets)} presets due for sync.")
+
+        # Optimization: Instantiate dependencies ONCE
+        client = TheOddsAPIClient()
+        mapping_repo = MappingRepository()
+        standardizer = DataStandardizer(mapping_repo)
+        ingester = DataIngester(client, standardizer)
         
         synced_any = False
         
         for preset in presets:
-            # Check if sync is due
-            should_sync = False
-            if not preset.last_sync_at:
-                should_sync = True
-            else:
-                # Handle timezone aware comparison
-                last_sync = preset.last_sync_at
-                if last_sync.tzinfo is None:
-                    last_sync = last_sync.replace(tzinfo=timezone.utc)
-                
-                if now - last_sync >= interval:
-                    should_sync = True
-            
-            if should_sync:
-                client = TheOddsAPIClient()
-                mapping_repo = MappingRepository()
-                standardizer = DataStandardizer(mapping_repo)
-                ingester = DataIngester(client, standardizer)
-                
-                try:
-                    await ingester.sync_data_for_preset(db, preset)
-                    preset.last_sync_at = now
-                    db.add(preset)
-                    await db.commit()
-                    synced_any = True
-                except Exception as e:
-                    logger.error(f"Failed to sync for preset {preset.name}: {e}")
+            try:
+                await ingester.sync_data_for_preset(db, preset)
+                preset.last_sync_at = datetime.now(timezone.utc)
+                db.add(preset)
+                # Commit after each sync to save progress and release locks
+                await db.commit()
+                synced_any = True
+            except Exception as e:
+                logger.error(f"Failed to sync for preset {preset.name}: {e}")
+                # Rollback this transaction so we can continue with others
+                await db.rollback()
         
         if synced_any:
             logger.info("New data fetched, triggering analysis...")
             await OddsAnalysisService.calculate_benchmark_values(db)
-        else:
-            logger.info("No presets due for sync.")
 
 async def job_cleanup_hidden_items():
     async with AsyncSessionLocal() as db:
@@ -221,7 +223,6 @@ async def job_settle_bets():
              .join(Bookmaker)
              .options(selectinload(Bet.bookmaker))
              .where(
-                #  Bookmaker.model_type == "api",
                  Bet.status.in_(["pending", "open", "placed", "manual", "auto"]),
                  Event.commence_time < start_cutoff,
                  Event.commence_time > now - timedelta(days=7)
@@ -237,29 +238,50 @@ async def job_settle_bets():
             
         logger.info(f"Checking settlement for {len(bets)} bets...")
 
+        # Optimization: Batch fetch results
+        # Collect unique composites (event_id, market_key, normalized_selection)
+        candidates = []
+        for bet in bets:
+             candidates.append((bet.event_id, bet.market_key, bet.selection))
+        
+        if not candidates:
+             return
+
+        # Build a query for all relevant Odds with results
+        # We need to filter by combinations.
+        # Efficient way: WHERE (event_id, market_key, normalized_selection) IN (...) is not standard SQL cross-db.
+        # Safer way: fetch all ODDS with results for these Events and create a map.
+        
+        relevant_event_ids = list(set([b.event_id for b in bets]))
+        
+        odds_stmt = (
+            select(Odds, Market.event_id, Market.key)
+            .join(Market)
+            .where(
+                Market.event_id.in_(relevant_event_ids),
+                Odds.result.is_not(None)
+            )
+        )
+        odds_res = await db.execute(odds_stmt)
+        odds_rows = odds_res.all()
+        
+        # Create Result Map: (event_id, market_key, selection_norm) -> Result
+        result_map = {}
+        for odd, ev_id, mkt_key in odds_rows:
+             key = (ev_id, mkt_key, odd.normalized_selection)
+             result_map[key] = odd.result
+
         # Map bookmaker_id to amount to CREDIT (add) to balance
         bookmakers_credits = {} 
 
+        total_settled = 0
         for bet in bets:
             try:
-                # Check for result in Odds table
-                # Match by event_id, market_key, selection (exact or normalized?)
-                # Try exact selection match primarily (normalized is safer if we have it on bet)
-                check_stmt = (
-                    select(Odds.result)
-                    .join(Market)
-                    .where(
-                        Market.event_id == bet.event_id,
-                        Market.key == bet.market_key,
-                        Odds.normalized_selection == bet.selection,
-                        Odds.result.is_not(None)
-                    )
-                    .limit(1)
-                )
-                res = await db.execute(check_stmt)
-                outcome = res.scalar_one_or_none()
-
-                logger.info(f"Bet {bet.id} outcome: {outcome}")
+                # Lookup Result
+                # Try exact normalized selection
+                outcome = result_map.get((bet.event_id, bet.market_key, bet.selection))
+                
+                # logger.debug(f"Bet {bet.id} outcome: {outcome}")
 
                 if outcome:
                     new_status = outcome.lower()
@@ -283,6 +305,8 @@ async def job_settle_bets():
                          bet.settled_at = now
                          db.add(bet)
                          
+                         total_settled += 1
+                         
                          # Track credit for bookmaker balance update
                          if balance_credit > 0:
                              current = bookmakers_credits.get(bet.bookmaker.id, 0.0)
@@ -292,29 +316,40 @@ async def job_settle_bets():
                 logger.error(f"Error settling bet {bet.id}: {e}")
         
         await db.commit()
+        logger.info(f"Settled {total_settled} bets.")
+        
+        if total_settled > 0:
+             # Broadcast update to frontend
+             try:
+                 from app.services.connection_manager import manager
+                 await manager.broadcast_my_bets({"type": "bets_updated"})
+             except Exception as e:
+                 logger.error(f"Failed to broadcast bet updates: {e}")
         
         # Update Balances
-        # We iterate over all bookmakers that had activity (credits) OR just all active ones?
-        # The prompt implies updating those we touched. 
-        # But if we rely on API, we might want to update anyway. 
-        # For efficiency, let's update those we have credits for.
-        
         for bk_id, credit_amount in bookmakers_credits.items():
             try:
                 # Re-fetch bookmaker to avoid session issues
                 bk = await db.get(Bookmaker, bk_id)
                 if not bk: continue
                 
-                service = BookmakerFactory.get_bookmaker(bk.key, bk.config or {}, db)
+                # Check API Balance if API bookmaker
+                # We can do this check safely
+                service = None
+                if bk.model_type == 'api' and bk.config:
+                    try:
+                        service = BookmakerFactory.get_bookmaker(bk.key, bk.config, db)
+                    except:
+                        pass
                 
-                # Try API Fetch
                 api_balance = None
-                try:
-                    bal_res = await service.get_account_balance()
-                    if bal_res and "balance" in bal_res:
-                        api_balance = float(bal_res["balance"])
-                except Exception:
-                    pass # Fallback to manual
+                if service:
+                    try:
+                        bal_res = await service.get_account_balance()
+                        if bal_res and "balance" in bal_res:
+                            api_balance = float(bal_res["balance"])
+                    except Exception:
+                        pass
                 
                 if api_balance is not None:
                      bk.balance = api_balance

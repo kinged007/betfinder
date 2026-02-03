@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
+from app.db.session import AsyncSessionLocal
+import asyncio
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -393,3 +395,98 @@ async def fetch_live_odds(params: FetchLiveRequest, db: AsyncSession = Depends(g
     except Exception as e:
         log(f"CRITICAL: {str(e)}"); import traceback; log(traceback.format_exc())
         return {"status": "error", "message": str(e), "logs": logs}
+@router.websocket("/odds/ws")
+async def websocket_dev_odds(
+    websocket: WebSocket,
+    bookmaker_id: Optional[str] = None,
+    future_only: str = "false",
+    db: AsyncSession = Depends(get_db)
+):
+    await websocket.accept()
+    
+    # Parse params
+    bm_id = None
+    if bookmaker_id:
+        try:
+            bm_id = int(bookmaker_id)
+        except:
+            pass
+            
+    is_future_only = future_only.lower() == "true"
+    
+    try:
+        while True:
+            # Query logic similar to view_odds
+            # We need a new session for each loop iteration if we want fresh data
+            # Use AsyncSessionLocal directly like in trade.py
+            async with AsyncSessionLocal() as session:
+                query = (
+                    select(Odds, Market, Event, Bookmaker)
+                    .join(Odds.market)
+                    .join(Market.event)
+                    .join(Odds.bookmaker)
+                )
+                
+                if bm_id:
+                    query = query.where(Odds.bookmaker_id == bm_id)
+                    
+                if is_future_only:
+                    from datetime import timezone
+                    now_utc = datetime.now(timezone.utc)
+                    buffer_time = now_utc - timedelta(minutes=120)
+                    query = query.where(Event.commence_time >= buffer_time)
+                    query = query.order_by(Event.commence_time.asc())
+                else:
+                    query = query.order_by(Odds.id.desc())
+                    
+                query = query.limit(500)
+                
+                result = await session.execute(query)
+                rows_data = result.all()
+                
+                # Transform data for template
+                rows = []
+                for o, m, e, b in rows_data:
+                    edge = ((o.price / o.true_odds) - 1) * 100 if o.true_odds and o.true_odds > 0 else None
+                    rows.append({
+                        "id": o.id,
+                        "game": f"{e.home_team} vs {e.away_team}",
+                        "sport": e.sport_key,
+                        "start_time": e.commence_time.isoformat() if e.commence_time.tzinfo else e.commence_time.isoformat() + "Z",
+                        "market": m.key,
+                        "selection": o.selection,
+                        "selection_norm": o.normalized_selection,
+                        "bookie": b.title,
+                        "bookie_id": b.id,
+                        "event_id": e.id,
+                        "price": o.price,
+                        "point": o.point,
+                        "prob": round(o.implied_probability, 4) if o.implied_probability else None,
+                        "true_odds": round(o.true_odds, 2) if o.true_odds else None,
+                        "edge": round(edge, 2) if edge is not None else None
+                    })
+                
+                # Render Partial
+                # We need to manually use jinja2 template
+                template = templates.get_template("partials/dev_odds_rows.html")
+                html_content = template.render(rows=rows)
+                
+                await websocket.send_json({"html": html_content})
+            
+            await asyncio.sleep(5)
+            
+            # Check for client close?
+            # receive_text might block, so we rely on send_json raising error if closed
+            # Correct approach: loop and sleep is aggressive
+            # Better: use asyncio.wait_for(websocket.receive_text(), timeout) logic?
+            # But we are PUSHING data.
+            # We can check websocket.client_state?
+            
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        print(f"Dev WS Error: {e}")
+        try:
+             await websocket.close()
+        except:
+             pass

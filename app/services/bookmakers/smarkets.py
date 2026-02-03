@@ -14,8 +14,8 @@ class SmarketsBookmaker(APIBookmaker):
     title = "Smarkets"
     base_url = "https://api.smarkets.com/v3"
     requests_per_second = 10.0 # Smarkets allows more for general requests
-    odds_per_second = 25/60 # Conservative rate for odds fetching. Half allowed API user limit
-    auth_type = "Bearer"
+    odds_per_second = 30/60 # Conservative rate for odds fetching. Half allowed API user limit. 30 per minute    auth_type = "Bearer"
+    live_odds = False
     
     @classmethod
     def get_config_schema(cls) -> List[Dict[str, Any]]:

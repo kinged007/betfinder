@@ -30,11 +30,48 @@
     .flash-decrease {
         animation: flashRed 1.5s ease-out;
     }
+
+    .pulse-dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        display: inline-block;
+    }
+
+    .status-connected {
+        background-color: #22c55e;
+        box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7);
+        animation: pulse-green 2s infinite;
+    }
+
+    .status-disconnected {
+        background-color: #ef4444;
+        box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+    }
+
+    @keyframes pulse-green {
+        0% {
+            transform: scale(0.95);
+            box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7);
+        }
+
+        70% {
+            transform: scale(1);
+            box-shadow: 0 0 0 10px rgba(34, 197, 94, 0);
+        }
+
+        100% {
+            transform: scale(0.95);
+            box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
+        }
+    }
 </style>
 <div class="w-full md:max-w-6xl px-0 md:px-4">
     {% if current_preset %}
     <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6 px-4 md:px-0">
         <div class="flex items-center gap-3">
+            <div id="ws-indicator" class="pulse-dot status-disconnected tooltip tooltip-right cursor-help"
+                data-tip="Connecting..."></div>
             <h2 class="text-xl md:text-2xl font-bold">{{ current_preset.name }}</h2>
             <a href="/presets-view?edit_id={{ current_preset.id }}" class="btn btn-ghost btn-xs btn-circle tooltip"
                 data-tip="Edit Preset">
@@ -305,6 +342,7 @@
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const ws = new WebSocket(`${protocol}//${window.location.host}/ws/tradefeed/${presetId}`);
         const tbody = document.getElementById("trade-feed-body");
+        const indicator = document.getElementById('ws-indicator');
         let lastData = [];
 
         // Config from preset
@@ -313,6 +351,8 @@
         let sortCol = otherConfig.sort_by || 'edge';
         let sortDir = otherConfig.sort_order || 'desc';
         let collapsedGroups = new Set();
+
+
 
         // Set initial group active button
         window.addEventListener('DOMContentLoaded', () => {
@@ -371,10 +411,20 @@
         }
 
         function renderData(data) {
-            tbody.innerHTML = "";
+            let html = "";
 
             if (data.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="5" class="text-center py-10 text-gray-400 font-medium">No opportunities found currently.</td></tr>`;
+                html = `<tr><td colspan="5" class="text-center py-10" id="no-data-msg">
+                            <span class="loading loading-spinner loading-lg"></span>
+                            <div class="mt-2 text-gray-500">Waiting for data or no opportunities found...</div>
+                        </td></tr>`;
+
+                // If the table is currently empty or showing waiting message, just set it
+                if (tbody.children.length === 0 || tbody.querySelector('#no-data-msg')) {
+                    tbody.innerHTML = html;
+                } else {
+                    Alpine.morph(tbody, html);
+                }
                 return;
             }
 
@@ -393,7 +443,7 @@
             });
 
             if (currentGroupBy === 'none') {
-                tbody.innerHTML = sortedData.map((item, idx) => getRowHtml(item, idx % 2 === 0)).join('');
+                html = sortedData.map((item, idx) => getRowHtml(item, idx % 2 === 0)).join('');
             } else {
                 const groups = {};
                 const groupOrder = [];
@@ -419,7 +469,7 @@
                     // Create a sanitized key for the onclick handler
                     const escapedKey = key.replace(/'/g, "\\'");
 
-                    tbody.innerHTML += `
+                    html += `
                         <tr class="group-header cursor-pointer select-none transition-colors hover:bg-base-200" 
                             onclick="toggleGroup('${escapedKey}')">
                             <td colspan="5" class="py-2 px-4 shadow-sm">
@@ -434,14 +484,20 @@
                     `;
 
                     if (!isCollapsed) {
-                        tbody.innerHTML += groupRows.map(item => {
-                            const html = getRowHtml(item, globalTradeIdx % 2 === 0);
+                        html += groupRows.map(item => {
+                            const rowHtml = getRowHtml(item, globalTradeIdx % 2 === 0);
                             globalTradeIdx++;
-                            return html;
+                            return rowHtml;
                         }).join('');
                     }
                 });
             }
+
+            // The Magic: Alpine Morph
+            // We must wrap the inner HTML in the same tag/id as the target to morph OUTER html correctly
+            // OR use options to morph inner. But standard is outer match.
+            const newTbody = `<tbody id="trade-feed-body">${html}</tbody>`;
+            Alpine.morph(tbody, newTbody);
         }
 
         function getRowHtml(item, isEven) {
@@ -838,11 +894,17 @@
             oddsIncreased.forEach(rowId => {
                 const rows = document.querySelectorAll(`tr[data-row-id="${rowId}"]`);
                 rows.forEach(row => {
-                    row.classList.remove('flash-decrease'); // Remove opposite animation if present
-                    row.classList.remove('flash-increase'); // Remove to restart animation
-                    // Force reflow to restart animation
-                    void row.offsetWidth;
+                    // Reset animation
+                    row.classList.remove('flash-increase');
+                    row.classList.remove('flash-decrease');
+                    void row.offsetWidth; // Force reflow
+
                     row.classList.add('flash-increase');
+
+                    // Safety cleanup after animation ends (1.5s)
+                    setTimeout(() => {
+                        row.classList.remove('flash-increase');
+                    }, 1500);
                 });
             });
 
@@ -850,11 +912,17 @@
             oddsDecreased.forEach(rowId => {
                 const rows = document.querySelectorAll(`tr[data-row-id="${rowId}"]`);
                 rows.forEach(row => {
-                    row.classList.remove('flash-increase'); // Remove opposite animation if present
-                    row.classList.remove('flash-decrease'); // Remove to restart animation
-                    // Force reflow to restart animation
-                    void row.offsetWidth;
+                    // Reset animation
+                    row.classList.remove('flash-increase');
+                    row.classList.remove('flash-decrease');
+                    void row.offsetWidth; // Force reflow
+
                     row.classList.add('flash-decrease');
+
+                    // Safety cleanup
+                    setTimeout(() => {
+                        row.classList.remove('flash-decrease');
+                    }, 1500);
                 });
             });
         }
@@ -870,13 +938,32 @@
             updateSortUI(); // Refresh UI indicators if data arrived while we had a sort set
 
             // Apply flash animations after rendering
+            // Alpine Morph updates the DOM synchronously.
             if (oddsIncreased.length > 0 || oddsDecreased.length > 0) {
-                // Small delay to ensure DOM is updated
-                setTimeout(() => applyFlashAnimations(oddsIncreased, oddsDecreased), 50);
+                applyFlashAnimations(oddsIncreased, oddsDecreased);
+            }
+        };
+
+        ws.onopen = function () {
+            console.log("WS Connected");
+            if (indicator) {
+                indicator.classList.remove('status-disconnected');
+                indicator.classList.add('status-connected');
+                indicator.setAttribute('data-tip', 'Live');
             }
         };
 
         ws.onclose = function () {
+            console.log("WS Disconnected");
+            const el = document.getElementById('ws-indicator');
+            if (el) {
+                el.classList.remove('status-connected');
+                el.classList.add('status-disconnected');
+                el.setAttribute('data-tip', 'Disconnected');
+                // Force style update to ensure animation stops
+                el.style.animation = 'none';
+                el.style.backgroundColor = '#ef4444';
+            }
             tbody.innerHTML = `<tr><td colspan="5" class="text-center py-10 text-error">Connection lost. Please refresh.</td></tr>`;
         };
     </script>

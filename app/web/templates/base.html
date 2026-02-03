@@ -14,6 +14,10 @@
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <script src="https://unpkg.com/htmx.org/dist/ext/ws.js"></script>
 
+    <!-- Alpine.js & Plugins -->
+    <script defer src="https://cdn.jsdelivr.net/npm/@alpinejs/morph@3.x.x/dist/cdn.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+
     <style>
         /* Global UI Fixes for Clipping & Stacking */
 
@@ -193,8 +197,8 @@
                     <li><a href="/presets-view"
                             class="block hover:bg-base-200 {% if active == 'presets' %}active{% endif %}">Presets</a>
                     </li>
-                    <li><a href="/bets-view"
-                            class="block hover:bg-base-200 {% if active == 'bets' %}active{% endif %}">My Bets</a></li>
+                    <li><a href="/my-bets" class="block hover:bg-base-200 {% if active == 'bets' %}active{% endif %}">My
+                            Bets</a></li>
                     <li><a href="/bookmakers"
                             class="block hover:bg-base-200 {% if active == 'bookmakers' %}active{% endif %}">Bookmakers</a>
                     </li>

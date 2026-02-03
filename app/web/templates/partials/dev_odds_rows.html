@@ -1,0 +1,44 @@
+{% for item in rows %}
+<tr class="hover group">
+    <td class="text-xs opacity-50 font-mono">{{ item.id }}</td>
+    <td class="max-w-[200px]">
+        <div class="font-bold text-xs truncate">{{ item.game }}</div>
+        <div class="text-[10px] opacity-60 local-time" data-utc-time="{{ item.start_time }}"></div>
+    </td>
+    <td class="text-[10px] opacity-50 uppercase font-mono">{{ item.sport }}</td>
+    <td class="text-[10px] font-medium opacity-70">{{ item.market }}</td>
+    <td>
+        <div class="font-bold text-xs text-primary">{{ item.selection }}</div>
+        <div class="text-[9px] opacity-40 uppercase font-mono">{{ item.selection_norm }}</div>
+    </td>
+    <td>
+        <span class="badge badge-outline badge-xs">{{ item.bookie }}</span>
+    </td>
+    <td class="font-mono font-bold text-accent">{{ "%.2f"|format(item.price) }}</td>
+    <td class="font-mono text-xs opacity-70">
+        {% if item.point is not none %}
+        {{ '+' if item.point > 0 else '' }}{{ item.point }}
+        {% else %}
+        -
+        {% endif %}
+    </td>
+    <td class="text-[10px] opacity-50">{{ item.prob or '-' }}</td>
+    <td class="text-[10px] font-bold">{{ item.true_odds or '-' }}</td>
+    <td
+        class="text-sm font-bold {% if item.edge and item.edge > 0 %}text-success{% elif item.edge %}text-error{% endif %}">
+        {{ item.edge or '-' }}{% if item.edge %}%{% endif %}
+    </td>
+    <td>
+        <button class="btn btn-xs btn-primary opacity-0 group-hover:opacity-100 transition-opacity"
+            onclick="quickBet({{ item.id }}, this)">
+            Bet 10€
+        </button>
+    </td>
+</tr>
+{% else %}
+<tr>
+    <td colspan="12" class="text-center py-20 opacity-50 italic text-sm">
+        No odds matching the current filters.
+    </td>
+</tr>
+{% endfor %}

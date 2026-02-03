@@ -29,7 +29,7 @@
 
     {# Macro to render the bet table #}
     {% macro render_bet_table(bets, table_id) %}
-    <div class="overflow-x-hidden">
+    <div class="h-full min-h-[500px]">
         <table class="table w-full text-sm bet-table" id="{{ table_id }}">
             <thead>
                 <tr class="bg-base-200 text-[10px] md:text-sm">
@@ -48,166 +48,8 @@
                     <th class="text-right w-20 md:w-24">Status</th>
                 </tr>
             </thead>
-            <tbody>
-                {% for bet in bets %}
-                {% set major_row_class = 'bg-base-200/40' if loop.index0 % 2 != 0 else '' %}
-                <tr class="bet-row-1 group transition-colors {{ major_row_class }}" data-bet-id="{{ bet.id }}">
-                    <td colspan="6" class="pb-1 pt-4 px-2 md:px-4 border-none">
-                        <div class="flex items-center gap-2 mb-1">
-                            <input type="checkbox" class="checkbox checkbox-xs bet-checkbox scale-90"
-                                onchange="updateSelectionUI()">
-                            <span class="text-[9px] font-bold text-primary/70 uppercase tracking-widest">
-                                {% if bet.event %}{{ bet.event.sport_key }}{% elif bet.event_data %}{{
-                                bet.event_data.sport_key }}{% endif %}
-                            </span>
-                            <span class="text-[9px] opacity-40">•</span>
-                            <span class="text-[9px] opacity-60 font-medium truncate min-w-0">
-                                {% if bet.event and bet.event.league %}{{ bet.event.league.title }}{% endif %}
-                            </span>
-
-                            <!-- Time on right -->
-                            <div class="ml-auto flex flex-row items-center gap-2 pr-2 shrink-0">
-                                {% set commence_time = None %}
-                                {% if bet.event %}{% set commence_time = bet.event.commence_time.isoformat() %}
-                                {% elif bet.event_data and bet.event_data.commence_time %}{% set commence_time =
-                                bet.event_data.commence_time %}{% endif %}
-
-                                {% if commence_time %}
-                                {% if 'Z' not in commence_time and '+' not in commence_time %}{% set commence_time =
-                                commence_time + 'Z' %}{% endif %}
-                                <div class="text-[10px] font-medium local-time" data-utc-time="{{ commence_time }}">
-                                </div>
-                                <div class="event-timer text-[8px]" data-start-time="{{ commence_time }}"
-                                    data-bet-status="{{ bet.status }}"></div>
-                                {% endif %}
-                            </div>
-                        </div>
-                        <div class="flex items-center gap-2 font-bold text-sm text-base-content/90 truncate ml-6">
-                            {% if bet.event %}
-                            {{ bet.event.home_team }} vs {{ bet.event.away_team }}
-                            {% elif bet.event_data %}
-                            {{ bet.event_data.home_team }} vs {{ bet.event_data.away_team }}
-                            {% else %}
-                            Unknown Event
-                            {% endif %}
-                            {% if bet.odd_data and bet.odd_data.url %}
-                            <a href="{{ bet.odd_data.url }}" target="_blank"
-                                class="btn btn-ghost btn-xs btn-circle p-0 h-4 w-4 min-h-0 opacity-40 hover:opacity-100"
-                                title="Open on Bookmaker">
-                                <svg class="w-3 h-3 text-blue-500" fill="none" stroke="currentColor"
-                                    viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                        d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14">
-                                    </path>
-                                </svg>
-                            </a>
-                            {% endif %}
-                        </div>
-                    </td>
-                </tr>
-                <tr class="bet-row-2 group transition-colors border-b border-base-200 {{ major_row_class }}"
-                    data-bet-id="{{ bet.id }}">
-                    <!-- Mobile Only Cell -->
-                    <td class="py-2 px-2 md:hidden">
-                        <div class="flex flex-wrap gap-1 items-center ml-6">
-                            <span
-                                class="text-[9px] bg-base-200 px-1 rounded font-medium uppercase truncate max-w-[60px]">{{
-                                bet.market_key }}</span>
-                            <span class="text-[11px] font-bold text-primary truncate max-w-[100px]">{{
-                                bet.selection|capitalize }}</span>
-                            {% if bet.odd_data and bet.odd_data.point is not none %}
-                            <span class="text-[11px] font-bold text-secondary">({{ '+' if bet.odd_data.point > 0 else ''
-                                }}{{ bet.odd_data.point }})</span>
-                            {% endif %}
-                            <span class="text-[10px] font-bold text-accent ml-1">@ {{ "%.2f"|format(bet.price) }}</span>
-                        </div>
-                        <div class="mt-1 ml-6">
-                            <span class="badge badge-outline badge-xs opacity-50 px-1">
-                                {% if bet.bookmaker %}{{ bet.bookmaker.title }}{% else %}Unknown{% endif %}
-                            </span>
-                        </div>
-                    </td>
-
-                    <!-- Desktop: Market / Selection -->
-                    <td class="hidden md:table-cell py-2 align-middle">
-                        <div class="flex flex-wrap gap-1 items-center ml-6">
-                            <span class="text-[9px] bg-base-200 px-1 rounded font-medium uppercase">{{ bet.market_key
-                                }}</span>
-                            <span class="text-[11px] font-bold text-primary">{{ bet.selection|capitalize }}</span>
-                        </div>
-                    </td>
-
-                    <!-- Desktop: Odds -->
-                    <td class="hidden md:table-cell py-2 align-middle">
-                        <div class="flex items-center gap-1">
-                            <span class="text-[11px] font-bold text-accent">@ {{ "%.2f"|format(bet.price) }}</span>
-                            {% if bet.odd_data and bet.odd_data.point is not none %}
-                            <span class="text-[11px] font-bold text-secondary">({{ '+' if bet.odd_data.point > 0 else ''
-                                }}{{ bet.odd_data.point }})</span>
-                            {% endif %}
-                        </div>
-                    </td>
-
-                    <!-- Desktop: Bookmaker -->
-                    <td class="hidden md:table-cell py-2 align-middle">
-                        <span class="badge badge-outline badge-xs opacity-50 px-1">
-                            {% if bet.bookmaker %}{{ bet.bookmaker.title }}{% else %}Unknown{% endif %}
-                        </span>
-                    </td>
-                    <td class="text-right align-middle whitespace-nowrap">
-                        <div class="font-bold text-[11px] md:text-sm">{{ "%.2f"|format(bet.stake) }}</div>
-                    </td>
-                    <td class="text-right align-middle whitespace-nowrap">
-                        {% if bet.payout is not none %}
-                        <div
-                            class="font-bold text-[11px] md:text-sm {% if bet.status == 'won' %}text-success{% elif bet.status == 'lost' %}text-error{% elif bet.status == 'void' %}text-warning{% endif %}">
-                            {{ "%.2f"|format(bet.payout) }}
-                        </div>
-                        {% else %}
-                        <div class="text-[9px] md:text-xs font-bold opacity-20"
-                            title="Estimate: {{ '%.2f'|format(bet.stake * bet.price) }}">
-                            {{ "%.2f"|format(bet.stake * bet.price) }}
-                        </div>
-                        {% endif %}
-                    </td>
-                    <td class="align-middle">
-                        <div class="flex items-center justify-end gap-1">
-                            {% if bet.status == 'open' or bet.status == 'pending' %}
-                            <span class="badge badge-warning badge-xs md:badge-sm capitalize">{{ bet.status }}</span>
-                            {% elif bet.status == 'won' %}
-                            <span class="badge badge-success badge-xs md:badge-sm capitalize">Won</span>
-                            {% elif bet.status == 'lost' %}
-                            <span class="badge badge-error badge-xs md:badge-sm capitalize">Lost</span>
-                            {% elif bet.status == 'void' %}
-                            <span class="badge badge-ghost badge-xs md:badge-sm capitalize">Void</span>
-                            {% else %}
-                            <span class="badge badge-outline badge-xs md:badge-sm capitalize">{{ bet.status }}</span>
-                            {% endif %}
-
-                            <div class="dropdown dropdown-end">
-                                <label tabindex="0" class="btn btn-xs btn-ghost btn-circle">
-                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none"
-                                        viewBox="0 0 24 24" stroke="currentColor">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                            d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
-                                    </svg>
-                                </label>
-                                <ul tabindex="0"
-                                    class="dropdown-content z-[2] menu p-2 shadow bg-base-100 rounded-box w-40 text-xs text-left">
-                                    <li><a
-                                            onclick="openSettleModal('{{ bet.id }}', '{{ bet.stake }}', '{{ bet.price }}', '{{ bet.status }}')">Edit
-                                            / Settle</a></li>
-                                    <li><a class="text-error" onclick="deleteBet('{{ bet.id }}')">Delete</a></li>
-                                </ul>
-                            </div>
-                        </div>
-                    </td>
-                </tr>
-                {% else %}
-                <tr>
-                    <td colspan="6" class="text-center py-10 text-gray-400">No bets history found.</td>
-                </tr>
-                {% endfor %}
+            <tbody id="{{ table_id }}-body">
+                {% include "partials/bet_rows.html" %}
             </tbody>
         </table>
     </div>
@@ -241,39 +83,39 @@
             <a role="tab" class="tab tab-active font-bold gap-2 whitespace-nowrap h-12" id="tab-live"
                 onclick="switchTab('live')">
                 Live
-                {% if live_bets|length > 0 %}
-                <span class="badge badge-xs badge-ghost pt-px">{{ '99+' if live_bets|length > 99 else live_bets|length
-                    }}</span>
-                {% endif %}
+                <span id="badge-live-count"
+                    class="badge badge-xs badge-ghost pt-px {% if live_bets|length == 0 %}hidden{% endif %}">
+                    {{ '99+' if live_bets|length > 99 else live_bets|length }}
+                </span>
             </a>
 
             {# Open Tab #}
             <a role="tab" class="tab font-bold gap-2 whitespace-nowrap h-12" id="tab-open" onclick="switchTab('open')">
                 Open
-                {% if open_bets|length > 0 %}
-                <span class="badge badge-xs badge-ghost pt-px">{{ '99+' if open_bets|length > 99 else open_bets|length
-                    }}</span>
-                {% endif %}
+                <span id="badge-open-count"
+                    class="badge badge-xs badge-ghost pt-px {% if open_bets|length == 0 %}hidden{% endif %}">
+                    {{ '99+' if open_bets|length > 99 else open_bets|length }}
+                </span>
             </a>
 
             {# Unsettled Tab #}
             <a role="tab" class="tab font-bold gap-2 whitespace-nowrap h-12" id="tab-unsettled"
                 onclick="switchTab('unsettled')">
                 Unsettled
-                {% if unsettled_bets|length > 0 %}
-                <span class="badge badge-xs badge-warning pt-px">{{ '99+' if unsettled_bets|length > 99 else
-                    unsettled_bets|length }}</span>
-                {% endif %}
+                <span id="badge-unsettled-count"
+                    class="badge badge-xs badge-warning pt-px {% if unsettled_bets|length == 0 %}hidden{% endif %}">
+                    {{ '99+' if unsettled_bets|length > 99 else unsettled_bets|length }}
+                </span>
             </a>
 
             {# Settled Tab #}
             <a role="tab" class="tab font-bold gap-2 whitespace-nowrap h-12" id="tab-settled"
                 onclick="switchTab('settled')">
                 Settled
-                {% if settled_bets|length > 0 %}
-                <span class="badge badge-xs badge-ghost pt-px">{{ '99+' if settled_bets|length > 99 else
-                    settled_bets|length }}</span>
-                {% endif %}
+                <span id="badge-settled-count"
+                    class="badge badge-xs badge-ghost pt-px {% if settled_bets|length == 0 %}hidden{% endif %}">
+                    {{ '99+' if settled_bets|length > 99 else settled_bets|length }}
+                </span>
             </a>
 
             <div class="tab-content bg-base-100 border-base-300 rounded-box p-0 w-full hidden" role="tabpanel"
@@ -539,6 +381,115 @@
     // We already have `switchTab` handling this via onclick.
     // We just need to restore it on load.
 
+    // WebSocket for My Bets Updates
+    let myBetsWs;
+    let wsReconnectInterval = 3000;
+
+    function connectMyBetsWs() {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${window.location.host}/ws/my-bets`;
+
+        myBetsWs = new WebSocket(wsUrl);
+
+        myBetsWs.onopen = () => {
+            console.log("Connected to My Bets WS");
+        };
+
+        myBetsWs.onmessage = async (event) => {
+            try {
+                const data = JSON.parse(event.data);
+
+                // Signal to refresh (e.g. {type: "bets_updated"})
+                if (data.type === 'bets_updated') {
+                    console.log("Bets updated signal received. Refreshing tabs...");
+                    // Refresh all tabs
+                    ['live', 'open', 'unsettled', 'settled'].forEach(tab => refreshTab(tab));
+                }
+
+                // Legacy: If server sends full HTML payload (optional support)
+                ['live', 'open', 'unsettled', 'settled'].forEach(type => {
+                    if (data[type]) {
+                        updateTableContent(type, data[type]);
+                    }
+                    if (data[`${type}_count`] !== undefined) {
+                        updateBadge(type, data[`${type}_count`]);
+                    }
+                });
+
+            } catch (e) {
+                console.error("Error processing WS message:", e);
+            }
+        };
+
+        myBetsWs.onclose = () => {
+            console.log("My Bets WS Disconnected. Reconnecting...");
+            setTimeout(connectMyBetsWs, wsReconnectInterval);
+        };
+
+        myBetsWs.onerror = (err) => {
+            console.error("My Bets WS Error:", err);
+            myBetsWs.close();
+        };
+    }
+
+    async function refreshTab(tab) {
+        try {
+            const response = await fetch(`/partials/bets?tab=${tab}`);
+            if (response.ok) {
+                const html = await response.text();
+                updateTableContent(tab, html);
+
+                // Count items to update badge?
+                // The partial contains rows.
+                // We can parse it or just rely on the fact that if we use morph, we preserve state.
+                // But badge count? 
+                // Currently partial returns `bet_rows.html`. It does NOT return count.
+                // We need to count the rows in the HTML or DOM updates.
+
+                // Simple DOM counting after update:
+                setTimeout(() => {
+                    const tbody = document.getElementById(`table-${tab}-body`);
+                    if (tbody) {
+                        const count = tbody.querySelectorAll('tr.bet-row-1').length;
+                        // But "No bets found" row logic?
+                        // If "No bets history found" is present, count is 0.
+                        const noBets = tbody.innerText.includes("No bets history found");
+                        updateBadge(tab, noBets ? 0 : count);
+                    }
+                }, 100);
+            }
+        } catch (e) {
+            console.error(`Failed to refresh tab ${tab}:`, e);
+        }
+    }
+
+    function updateTableContent(type, html) {
+        const tbodyId = `table-${type}-body`;
+        const tbody = document.getElementById(tbodyId);
+        if (tbody) {
+            if (window.Alpine && window.Alpine.morph) {
+                Alpine.morph(tbody, `<tbody id="${tbodyId}">${html}</tbody>`);
+            } else {
+                tbody.innerHTML = html;
+            }
+            // Re-apply timers
+            renderLocalTimes();
+            updateTimers();
+        }
+    }
+
+    function updateBadge(type, count) {
+        const badge = document.getElementById(`badge-${type}-count`);
+        if (badge) {
+            if (count > 0) {
+                badge.textContent = count > 99 ? '99+' : count;
+                badge.classList.remove('hidden');
+            } else {
+                badge.classList.add('hidden');
+            }
+        }
+    }
+
     setInterval(updateTimers, 60000);
     document.addEventListener('DOMContentLoaded', () => {
         const activeTab = localStorage.getItem('my_bets_active_tab') || 'live';
@@ -546,6 +497,9 @@
 
         updateTimers();
         renderLocalTimes();
+
+        // Start WS
+        connectMyBetsWs();
     });
 </script>
 {% endblock %}
