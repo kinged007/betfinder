@@ -17,7 +17,10 @@ from app.core.enums import BetResult, BetStatus
 import logging
 logger = logging.getLogger(__name__)
 
-scheduler = AsyncIOScheduler()
+scheduler = AsyncIOScheduler(timezone=timezone.utc)
+
+async def job_heartbeat():
+    logger.info(f"Scheduler Heartbeat: {datetime.now(timezone.utc)}")
 
 async def job_fetch_sports():
     async with AsyncSessionLocal() as db:
@@ -28,6 +31,8 @@ async def job_fetch_sports():
         ingester = DataIngester(client, standardizer)
         
         await ingester.sync_sports(db)
+
+
 
 async def job_analyze_odds():
     async with AsyncSessionLocal() as db:
@@ -370,11 +375,16 @@ def start_scheduler(run_immediately: bool = False):
     Start the background scheduler.
     If run_immediately is True, all jobs will trigger their first execution right now.
     """
+    logger.info(f"Initializing Scheduler (UTC time: {datetime.now(timezone.utc)})")
+    
     def next_time(delta=0):
         if run_immediately:
             return datetime.now(timezone.utc) + timedelta(minutes=delta)
         return None
     
+    # Heartbeat every minute
+    scheduler.add_job(job_heartbeat, 'interval', minutes=1, next_run_time=datetime.now(timezone.utc) + timedelta(seconds=10))
+
     scheduler.add_job(job_preset_sync, 'interval', minutes=15, next_run_time=next_time(1))
     scheduler.add_job(job_global_odds_live_sync, 'interval', minutes=25, next_run_time=next_time(2))
     scheduler.add_job(job_analyze_odds, 'interval', minutes=30, next_run_time=next_time(3))
@@ -391,6 +401,9 @@ def start_scheduler(run_immediately: bool = False):
     scheduler.add_job(job_fetch_sports, 'interval', weeks=1)
     
     scheduler.start()
+    logger.info("Scheduler started successfully.")
+    for job in scheduler.get_jobs():
+        logger.info(f"Scheduled job {job.name} - Next run: {job.next_run_time}")
 
 def stop_scheduler():
     logger.info("Stopping scheduler...")
