@@ -33,8 +33,10 @@ class SmarketsBookmaker(APIBookmaker):
         """Test connection to the bookmaker API."""
         try:
             res = await self.get_account_balance()
+            if isinstance(res, dict) and "balance" in res:
+                return True
             if res:
-                return res
+                return True
         except Exception as e:
             print(f"Smarkets test connection failed: {str(e)}")
         return False

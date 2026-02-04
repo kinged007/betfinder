@@ -184,6 +184,8 @@ class APIBookmaker(SimpleBookmaker):
         # 2. Prepare URL and Headers
         url = f"{self.base_url.rstrip('/')}/{endpoint.lstrip('/')}"
         full_headers = headers.copy() if headers else {}
+        if "User-Agent" not in full_headers:
+            full_headers["User-Agent"] = "Mozilla/5.0 (compatible; SportsBetFinder/1.0; +http://localhost)"
         
         if use_auth and self.api_token:
             if self.auth_type == "Bearer":
@@ -211,9 +213,21 @@ class APIBookmaker(SimpleBookmaker):
                 res.raise_for_status()
                 return res
             except httpx.HTTPStatusError as e:
-                # Log or handle specific errors
-                raise e
+                error_content = str(e)
+                try:
+                    # Try to read response text for more details
+                     if e.response:
+                        await e.response.read()
+                        error_details = e.response.text
+                        error_content = f"{str(e)} - Details: {error_details}"
+                except Exception:
+                    pass
+                
+                print(f"HTTPStatusError in make_request for {url}: {error_content}")
+                # Re-raise with the detailed message
+                raise Exception(error_content) from e
             except Exception as e:
+                print(f"Exception in make_request for {url}: {type(e).__name__} - {str(e)}")
                 raise e
 
     @classmethod

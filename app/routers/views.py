@@ -395,7 +395,7 @@ async def bets_partial_view(
             .limit(100)
         )
     
-    if stmt:
+    if stmt is not None:
         bets = (await db.execute(stmt)).scalars().all()
         
     return templates.TemplateResponse(
