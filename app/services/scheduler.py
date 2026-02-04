@@ -13,7 +13,9 @@ from app.services.analysis import OddsAnalysisService
 from app.services.bookmakers.base import BookmakerFactory
 from sqlalchemy.orm import selectinload
 from app.services.analytics.trade_finder import TradeFinderService
+from app.services.analytics.trade_finder import TradeFinderService
 from app.core.enums import BetResult, BetStatus
+from app.services.notifications.manager import NotificationManager
 import logging
 logger = logging.getLogger(__name__)
 
@@ -87,7 +89,32 @@ async def job_preset_sync():
         
         if synced_any:
             logger.info("New data fetched, triggering analysis...")
+            logger.info("New data fetched, triggering analysis...")
             await OddsAnalysisService.calculate_benchmark_values(db)
+            
+            # --- Notification Phase ---
+            # Now that analysis is done (Edge/True Odds calculated), check for notifications
+            logger.info("Analysis complete. Checking for trade notifications...")
+            try:
+                for preset_obj in presets:
+                    # Refresh preset to ensure it's attached/fresh if needed, though simpler to use ID
+                    # We need the config, so let's reload it to be safe or use existing if active
+                    # preset_obj might be detached after commits.
+                    preset = await db.get(Preset, preset_obj.id)
+                    if not preset: continue
+                    
+                    notif_enabled = preset.other_config.get("notification_new_bet", "true")
+                    if notif_enabled == "true":
+                        trade_finder = TradeFinderService()
+                        opportunities = await trade_finder.scan_opportunities(db, preset.id)
+                        
+                        if opportunities:
+                            logger.info(f"Found {len(opportunities)} potential trades for preset {preset.name}")
+                            notification_manager = NotificationManager(db)
+                            for opp in opportunities:
+                                await notification_manager.send_trade_notification(preset, opp)
+            except Exception as e:
+                logger.error(f"Error in notification phase: {e}")
 
 async def job_cleanup_hidden_items():
     async with AsyncSessionLocal() as db:

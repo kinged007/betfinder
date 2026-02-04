@@ -161,34 +161,7 @@ class DataIngester:
         
         logger.info(f"Completed sync for preset: {preset.name}")
 
-        # --- Notification Trigger ---
-        # After syncing data, run the trade finder and notify if configured
-        try:
-            # Check config first
-            notif_enabled = preset.other_config.get("notification_new_bet", "true") # Default "true" as per schema
-            if notif_enabled == "true":
-                logger.info(f"Checking for new trades to notify for preset: {preset.name}")
-                trade_finder = TradeFinderService()
-                # Scan opportunities for this preset
-                # API Only? Usually auto-trade uses api_only=True, but notifications might want all.
-                # Let's use api_only=False to catch all Manual/Source trades too if desired, 
-                # but typically we only notify on actionable stuff. 
-                # The user request didn't specify, but "fetch a random odds opportunity" implies checking the finder.
-                opportunities = await trade_finder.scan_opportunities(db, preset.id)
-                
-                if opportunities:
-                    notification_manager = NotificationManager(db)
-                    count_sent = 0
-                    for opp in opportunities:
-                        # We only notify high quality trades perhaps? 
-                        # The scan_opportunities already filters by preset criteria (min edge, min odds etc).
-                        # So any result here IS a match.
-                        await notification_manager.send_trade_notification(preset, opp)
-                        count_sent += 1
-                    
-                    logger.info(f"Notification check complete. Processed {len(opportunities)} opportunities.")
-        except Exception as e:
-            logger.error(f"Error in notification trigger for preset {preset.name}: {e}")
+        logger.info(f"Completed sync for preset: {preset.name}")
 
     async def _process_odds_data(self, db: AsyncSession, odds_data: List[Dict[str, Any]]):
         for event_data in odds_data:
