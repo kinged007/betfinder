@@ -373,32 +373,38 @@ async def job_settle_bets():
 def start_scheduler(run_immediately: bool = False):
     """
     Start the background scheduler.
-    If run_immediately is True, all jobs will trigger their first execution right now.
+    If run_immediately is True, all jobs will trigger their first execution right now (staggered).
+    If False, they will run after their first interval passes.
     """
     logger.info(f"Initializing Scheduler (UTC time: {datetime.now(timezone.utc)})")
     
-    def next_time(delta=0):
+    def get_trigger_args(delta_minutes=0):
         if run_immediately:
-            return datetime.now(timezone.utc) + timedelta(minutes=delta)
-        return None
+            # Stagger start by delta_minutes
+            run_time = datetime.now(timezone.utc) + timedelta(minutes=delta_minutes)
+            return {"next_run_time": run_time}
+        return {}
     
-    # Heartbeat every minute
+    # Heartbeat every minute - Always start soon for diagnostics
     scheduler.add_job(job_heartbeat, 'interval', minutes=1, next_run_time=datetime.now(timezone.utc) + timedelta(seconds=10))
 
-    scheduler.add_job(job_preset_sync, 'interval', minutes=15, next_run_time=next_time(1))
-    scheduler.add_job(job_global_odds_live_sync, 'interval', minutes=25, next_run_time=next_time(2))
-    scheduler.add_job(job_analyze_odds, 'interval', minutes=30, next_run_time=next_time(3))
+    scheduler.add_job(job_preset_sync, 'interval', minutes=15, **get_trigger_args(1))
+    scheduler.add_job(job_global_odds_live_sync, 'interval', minutes=25, **get_trigger_args(2))
+    scheduler.add_job(job_analyze_odds, 'interval', minutes=30, **get_trigger_args(3))
     
     # New jobs
     # get_results runs every 30 mins
-    scheduler.add_job(job_get_results, 'interval', minutes=30, next_run_time=next_time(4))
+    scheduler.add_job(job_get_results, 'interval', minutes=30, **get_trigger_args(4))
     # settle_bets runs every 35 mins
-    scheduler.add_job(job_settle_bets, 'interval', minutes=35, next_run_time=next_time(5))
+    scheduler.add_job(job_settle_bets, 'interval', minutes=35, **get_trigger_args(5))
     
-    scheduler.add_job(job_auto_trade, 'interval', minutes=5, next_run_time=next_time(6))
-    scheduler.add_job(job_cleanup_hidden_items, 'interval', hours=12, next_run_time=next_time(7))
+    scheduler.add_job(job_auto_trade, 'interval', minutes=5, **get_trigger_args(6))
+    scheduler.add_job(job_cleanup_hidden_items, 'interval', hours=12, **get_trigger_args(7))
+    
     # makes API requests on each run, so we should minimise this. Maybe schedule to run on mondays only? 
-    scheduler.add_job(job_fetch_sports, 'interval', weeks=1)
+    # For weekly jobs, we probably don't want to run immediately on every restart if run_immediately is set? 
+    # But adhering to the flag:
+    scheduler.add_job(job_fetch_sports, 'interval', weeks=1, **get_trigger_args(8))
     
     scheduler.start()
     logger.info("Scheduler started successfully.")

@@ -103,7 +103,7 @@ async def lifespan(app: FastAPI):
                 # so it can serve the error page. But we skip the sync logic.
             else:
                 await check_and_sync_initial_data()
-                start_scheduler()
+                start_scheduler(run_immediately=True)
                 app.state.startup_status = "ready"
                 logger.info("Background Startup: Complete. App is ready.")
             
