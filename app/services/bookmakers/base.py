@@ -74,11 +74,12 @@ class APIBookmaker(SimpleBookmaker):
     auth_type: str = "Bearer" # "Bearer", "ApiKey", "Basic", or None
     base_url: str = ""
     api_token: str = ""
-    requests_per_second: float = 5.0 # Default rate limit for general API requests
-    odds_per_second: float = 1.0 # Default rate limit for odds fetching (can be lower due to pricing)
+    requests_per_second: float = 0.5 # Default rate limit for general API requests
+    odds_per_second: float = 0.1 # Default rate limit for odds fetching (can be lower due to pricing)
     pre_game_odds: bool = True # Whether bookmaker provides pre-game odds
     live_odds: bool = False # Whether bookmaker provides live odds
     db: Optional[Any] = None
+    unauthorized_codes = {401, 403}
 
     def __init__(self, key: str, config: Dict[str, Any], db: Optional[Any] = None):
         super().__init__(key, config)
@@ -88,6 +89,13 @@ class APIBookmaker(SimpleBookmaker):
         self._last_request_time = 0
         self._last_sync_times: Dict[str, datetime] = {} # {event_id: last_sync_time}
         self._last_odds_sync: float = 0 # Global timestamp for odds rate limiting
+        
+        # Circuit Breaker Fields
+        self._recent_errors: List[float] = [] # timestamps of errors
+        self._circuit_open_until: float = 0
+        self._error_threshold = 10 # failures
+        self._error_window = 300 # seconds (5 mins)
+        self._cool_off_duration = 3600 # seconds (1 hour)
 
     def should_sync_event(self, event_id: str, commence_time: datetime) -> bool:
         """Determines if an event should be synced based on its start time and last sync."""
@@ -166,6 +174,38 @@ class APIBookmaker(SimpleBookmaker):
             self._rate_limiter = asyncio.Semaphore(1) 
         return self._rate_limiter
 
+    async def _check_circuit_breaker(self):
+        now = time.time()
+        if now < self._circuit_open_until:
+            wait_min = int((self._circuit_open_until - now) / 60)
+            raise Exception(f"Circuit tripped. Cooling off for {wait_min} more minutes.")
+
+    async def _handle_request_error(self):
+        now = time.time()
+        self._recent_errors.append(now)
+        
+        # Prune old errors
+        window_start = now - self._error_window
+        self._recent_errors = [t for t in self._recent_errors if t > window_start]
+        
+        if len(self._recent_errors) >= self._error_threshold:
+            # Trip Circuit
+            self._circuit_open_until = now + self._cool_off_duration
+            msg = f"API Circuit Breaker Tripped for {self.title} ({self.key}). Too many errors ({len(self._recent_errors)}) in last 5 mins. Pausing for 1 hour."
+            print(msg)
+            
+            # Attempt to notify
+            if self.db:
+                try:
+                    from app.services.notifications.manager import NotificationManager
+                    nm = NotificationManager(self.db)
+                    await nm.send_error_notification(f"Circuit Breaker: {self.title}", msg)
+                except Exception as e:
+                    print(f"Failed to send circuit breaker notification: {e}")
+            
+            # Clear errors so it resets after cool-off
+            self._recent_errors = []
+
     async def make_request(
         self, 
         method: str, 
@@ -173,8 +213,12 @@ class APIBookmaker(SimpleBookmaker):
         data: Optional[Dict[str, Any]] = None, 
         params: Optional[Dict[str, Any]] = None,
         headers: Optional[Dict[str, Any]] = None,
-        use_auth: bool = True
+        use_auth: bool = True,
+        retry_auth: bool = True
     ) -> Any:
+
+        # 0. Check Circuit Breaker
+        await self._check_circuit_breaker()
 
         # 1. Rate Limiting
         async with self._get_rate_limiter():
@@ -217,6 +261,25 @@ class APIBookmaker(SimpleBookmaker):
                 res.raise_for_status()
                 return res
             except httpx.HTTPStatusError as e:
+                # 4a. Auto-Reauthorization Attempt
+                if e.response.status_code in self.unauthorized_codes and retry_auth:
+                    print(f"Auth failed ({e.response.status_code}) for {self.key}. Attempting re-authorization...")
+                    try:
+                        auth_success = await self.authorize()
+                        if auth_success:
+                            print(f"Re-authorization successful for {self.key}. Retrying request...")
+                            # Retry request with updated credentials (self.api_token updated by authorize)
+                            return await self.make_request(
+                                method, endpoint, data, params, headers, use_auth, retry_auth=False
+                            )
+                        else:
+                            print(f"Re-authorization failed for {self.key}.")
+                    except Exception as auth_error:
+                        print(f"Error during re-authorization for {self.key}: {auth_error}")
+
+                # 4b. Circuit Breaker Logic
+                await self._handle_request_error()
+                
                 error_content = str(e)
                 try:
                     # Try to read response text for more details
@@ -231,6 +294,11 @@ class APIBookmaker(SimpleBookmaker):
                 # Re-raise with the detailed message
                 raise Exception(error_content) from e
             except Exception as e:
+                # Trigger circuit breaker logic for connection errors too?
+                # User asked for "catches to try again... fail 10 times... stop"
+                # Connection errors might be transient, but repeated ones suggest downtime or ban.
+                await self._handle_request_error()
+
                 print(f"Exception in make_request for {url}: {type(e).__name__} - {str(e)}")
                 raise e
 

@@ -13,8 +13,9 @@ class SmarketsBookmaker(APIBookmaker):
     name = "smarkets"
     title = "Smarkets"
     base_url = "https://api.smarkets.com/v3"
-    requests_per_second = 10.0 # Smarkets allows more for general requests
-    odds_per_second = 30/60 # Conservative rate for odds fetching. Half allowed API user limit. 30 per minute    auth_type = "Bearer"
+    requests_per_second = 1.0 # Smarkets allows more for general requests
+    odds_per_second = 1/60 # Conservative rate for odds fetching. Allowed 50 per minute. We set to 1 request per minute  
+    auth_type = "Bearer"
     live_odds = False
     
     @classmethod

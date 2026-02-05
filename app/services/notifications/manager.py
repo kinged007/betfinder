@@ -141,3 +141,23 @@ class NotificationManager:
         )
         self.db.add(new_notification)
         await self.db.commit()
+
+    async def send_error_notification(self, title: str, message: str):
+        """
+        Sends an error/alert notification to the user (Telegram).
+        """
+        full_message = f"🚨 *{title}* 🚨\n\n{message}"
+        
+        # Telegram
+        await self.telegram.send_message(full_message)
+        
+        # Database Record
+        new_notification = Notification(
+            type="error",
+            message=full_message,
+            data={},
+            sent=True,
+            processed_at=datetime.now(timezone.utc)
+        )
+        self.db.add(new_notification)
+        await self.db.commit()
