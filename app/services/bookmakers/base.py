@@ -180,7 +180,7 @@ class APIBookmaker(SimpleBookmaker):
             wait_min = int((self._circuit_open_until - now) / 60)
             raise Exception(f"Circuit tripped. Cooling off for {wait_min} more minutes.")
 
-    async def _handle_request_error(self):
+    async def _handle_request_error(self, last_error: Optional[str] = None):
         now = time.time()
         self._recent_errors.append(now)
         
@@ -192,6 +192,10 @@ class APIBookmaker(SimpleBookmaker):
             # Trip Circuit
             self._circuit_open_until = now + self._cool_off_duration
             msg = f"API Circuit Breaker Tripped for {self.title} ({self.key}). Too many errors ({len(self._recent_errors)}) in last 5 mins. Pausing for 1 hour."
+            
+            if last_error:
+                msg += f"\n\nLast Error Details:\n{last_error}"
+                
             print(msg)
             
             # Attempt to notify
@@ -261,6 +265,17 @@ class APIBookmaker(SimpleBookmaker):
                 res.raise_for_status()
                 return res
             except httpx.HTTPStatusError as e:
+                # Extract error details first for logging/notification
+                error_content = str(e)
+                try:
+                     if e.response:
+                        await e.response.read()
+                        # Capture full response body (e.g. Smarkets JSON error)
+                        resp_text = e.response.text
+                        error_content = f"{e.response.status_code} {e.response.reason_phrase}\nResponse: {resp_text}"
+                except Exception:
+                    pass
+
                 # 4a. Auto-Reauthorization Attempt
                 if e.response.status_code in self.unauthorized_codes and retry_auth:
                     print(f"Auth failed ({e.response.status_code}) for {self.key}. Attempting re-authorization...")
@@ -273,33 +288,22 @@ class APIBookmaker(SimpleBookmaker):
                                 method, endpoint, data, params, headers, use_auth, retry_auth=False
                             )
                         else:
-                            print(f"Re-authorization failed for {self.key}.")
+                            print(f"Re-authorization failed for {self.key}. Error: {error_content}")
                     except Exception as auth_error:
                         print(f"Error during re-authorization for {self.key}: {auth_error}")
 
-                # 4b. Circuit Breaker Logic
-                await self._handle_request_error()
-                
-                error_content = str(e)
-                try:
-                    # Try to read response text for more details
-                     if e.response:
-                        await e.response.read()
-                        error_details = e.response.text
-                        error_content = f"{str(e)} - Details: {error_details}"
-                except Exception:
-                    pass
+                # 4b. Circuit Breaker Logic (pass detailed error)
+                await self._handle_request_error(last_error=error_content)
                 
                 print(f"HTTPStatusError in make_request for {url}: {error_content}")
                 # Re-raise with the detailed message
                 raise Exception(error_content) from e
             except Exception as e:
-                # Trigger circuit breaker logic for connection errors too?
-                # User asked for "catches to try again... fail 10 times... stop"
-                # Connection errors might be transient, but repeated ones suggest downtime or ban.
-                await self._handle_request_error()
+                # Trigger circuit breaker logic for connection errors too
+                detailed_error = f"{type(e).__name__}: {str(e)}"
+                await self._handle_request_error(last_error=detailed_error)
 
-                print(f"Exception in make_request for {url}: {type(e).__name__} - {str(e)}")
+                print(f"Exception in make_request for {url}: {detailed_error}")
                 raise e
 
     @classmethod
