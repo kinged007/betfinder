@@ -43,7 +43,12 @@ class DataIngester:
              # Simplest: Check if last successful sync was recent.
              # Since we don't store "Last Sync Job", we check the updated_at of a sport.
              if first_sport.updated_at:
-                 age = datetime.now(timezone.utc) - first_sport.updated_at
+                 # Ensure updated_at is timezone-aware
+                 updated_at = first_sport.updated_at
+                 if updated_at.tzinfo is None:
+                     updated_at = updated_at.replace(tzinfo=timezone.utc)
+                     
+                 age = datetime.now(timezone.utc) - updated_at
                  if age > timedelta(days=7):
                      logger.info(f"Sports data > 7 days old ({age}). Sync required.")
                      should_sync = True
