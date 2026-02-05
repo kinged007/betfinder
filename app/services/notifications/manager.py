@@ -2,7 +2,8 @@ import logging
 import json
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, cast
+from sqlalchemy.dialects.postgresql import JSONB
 from app.db.models import Notification, Preset
 from app.services.notifications.telegram import TelegramNotifier
 from app.services.analytics.trade_finder import TradeOpportunity
@@ -51,10 +52,29 @@ class NotificationManager:
             "odd_id": trade.odd.id
         }
         
-        stmt = select(Notification).where(
-            Notification.type == "trade_alert",
-            Notification.data.contains(dedupe_key)
-        )
+        # Dialect check for JSON storage
+        # SQLite stores JSON as Text (mostly), Postgres has native JSON/JSONB
+        # 'Notification.data' is defined as JSON type in models.
+        # Check dialect to decide if we need casting for containment check.
+        # Use get_bind() to retrieve the engine/connection and check the dialect name.
+        dialect_name = "sqlite" # Default
+        try:
+             # Try to get dialect name safely
+             if self.db.bind:
+                 dialect_name = self.db.bind.dialect.name
+        except Exception:
+             pass
+
+        if dialect_name == "postgresql":
+            stmt = select(Notification).where(
+                Notification.type == "trade_alert",
+                cast(Notification.data, JSONB).contains(dedupe_key)
+            )
+        else:
+            stmt = select(Notification).where(
+                Notification.type == "trade_alert",
+                Notification.data.contains(dedupe_key)
+            )
         result = await self.db.execute(stmt)
         existing = result.first()
         
@@ -101,7 +121,7 @@ class NotificationManager:
             f"{sport_icon} {league_line}\n"
             f"`{trade.event.home_team}` vs `{trade.event.away_team}`\n"
             f"⏰ {start_time} GMT\n"
-            f"{trade.market.key.upper()} - `{trade.odd.normalized_selection}` @{trade.odd.price} ({bookmaker_display})\n"
+            f"{trade.market.key.upper()} - `{trade.odd.selection}` @{trade.odd.price} ({bookmaker_display})\n"
             f"Prob: {prob_str}\n"
             f"Edge: {edge_str}"
         )
