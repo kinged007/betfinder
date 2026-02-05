@@ -50,7 +50,8 @@ class SmarketsBookmaker(APIBookmaker):
             self.api_token = token_to_try
             try:
                 # Use /accounts/ to verify token via standardized make_request
-                res = await self.make_request("GET", "/accounts/")
+                # Disable retry_auth to avoid infinite recursion if this check fails
+                res = await self.make_request("GET", "/accounts/", retry_auth=False)
                 if res.status_code == 200:
                     self._session_token = token_to_try
                     return True
@@ -70,7 +71,8 @@ class SmarketsBookmaker(APIBookmaker):
                 "password": password,
                 "remember": True
             }
-            res = await self.make_request("POST", "/sessions/", data=payload, use_auth=False)
+            # Disable retry_auth and use_auth (obviously) for login
+            res = await self.make_request("POST", "/sessions/", data=payload, use_auth=False, retry_auth=False)
             if res.status_code == 200 or res.status_code == 201:
                 data = res.json()
                 self._session_token = data.get("token")
