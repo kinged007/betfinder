@@ -1,5 +1,5 @@
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import logging
 from typing import List, Optional, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -43,7 +43,7 @@ class DataIngester:
              # Simplest: Check if last successful sync was recent.
              # Since we don't store "Last Sync Job", we check the updated_at of a sport.
              if first_sport.updated_at:
-                 age = datetime.utcnow() - first_sport.updated_at
+                 age = datetime.now(timezone.utc) - first_sport.updated_at
                  if age > timedelta(days=7):
                      logger.info(f"Sports data > 7 days old ({age}). Sync required.")
                      should_sync = True

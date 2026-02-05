@@ -1,6 +1,6 @@
 import logging
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, cast
 from sqlalchemy.dialects.postgresql import JSONB
@@ -137,7 +137,7 @@ class NotificationManager:
             message=message,
             data=dedupe_key,
             sent=True, # Assessing it as sent if we fired the tasks. 
-            processed_at=datetime.utcnow()
+            processed_at=datetime.now(timezone.utc)
         )
         self.db.add(new_notification)
         await self.db.commit()

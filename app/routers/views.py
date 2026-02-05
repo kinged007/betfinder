@@ -111,7 +111,7 @@ from sqlalchemy.orm import selectinload
 @router.get("/my-bets")
 async def bets_view(request: Request, db: AsyncSession = Depends(get_db)):
     from datetime import timedelta, datetime
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     live_cutoff_past = now - timedelta(minutes=120) # Define settled statuses for tabs logic
     SETTLED_STATUSES = [BetResult.WON.value, BetResult.LOST.value, BetResult.VOID.value]
 
@@ -309,7 +309,7 @@ async def register_manual_bet(
         stake=bet_in.stake,
         price=bet_in.price,
         status="manual",
-        placed_at=datetime.utcnow(),
+        placed_at=datetime.now(timezone.utc),
         event_data=event_snapshot,
         market_data=market_snapshot,
         odd_data=odd_snapshot,
@@ -341,7 +341,7 @@ async def bets_partial_view(
     db: AsyncSession = Depends(get_db)
 ):
     from datetime import timedelta, datetime
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     live_cutoff_past = now - timedelta(minutes=120) 
     SETTLED_STATUSES = [BetResult.WON.value, BetResult.LOST.value, BetResult.VOID.value]
 

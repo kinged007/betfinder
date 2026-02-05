@@ -193,8 +193,8 @@ async def bulk_update_bets(
 
             # Update settled_at
             if new_status in settled_statuses and not update_data.get("settled_at"):
-                from datetime import datetime
-                update_data["settled_at"] = datetime.utcnow()
+                from datetime import datetime, timezone
+                update_data["settled_at"] = datetime.now(timezone.utc)
             elif new_status == "open":
                 update_data["settled_at"] = None
 

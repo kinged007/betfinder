@@ -43,7 +43,7 @@ class TradeOpportunity:
             "implied_probability": self.odd.implied_probability,
             "point": self.odd.point,
             "url": self.odd.url,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
 
 class TradeFinderService:
@@ -62,7 +62,7 @@ class TradeFinderService:
         # Assume a default game/match/event length of 120 minutes
         # Use this to filter out events that have already started
         event_length = timedelta(minutes=120)
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         
         # Build query
         # We start from Odds and join relationships explicitly
@@ -388,7 +388,7 @@ class TradeFinderService:
             logger.info("No active API bookmakers found for sync.")
             return
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         cutoff = now - timedelta(hours=2) # Include recently started (live) events
         
         for bm_id in api_bookmaker_ids:
@@ -461,7 +461,7 @@ class TradeFinderService:
 
         # Time window logic
         # Show recent and future events (looser than main scan)
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         limit_time = now - timedelta(hours=6) # Show items from last 6 hours (live/just finished)
         
         query = (
@@ -565,7 +565,7 @@ class TradeFinderService:
                 "point": odd.point,
                 "url": odd.url,
                 "hidden_id": matched_hidden_id,
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             })
             
         return opportunities

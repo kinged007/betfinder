@@ -5,7 +5,7 @@ from sqlalchemy import select, func, and_, or_, distinct, case
 from app.api.deps import get_db
 from app.db.models import Event, Sport, League, Bookmaker, Market, Odds
 from app.core.config import settings
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 from sqlalchemy.orm import selectinload
 from app.core.security import check_session
@@ -50,7 +50,7 @@ async def get_fixtures_list(
     is_live: bool = False
 ):
     # Time filter: now() - 120 min (to include games that started recently and are likely still live)
-    cutoff_time = datetime.utcnow() - timedelta(minutes=120)
+    cutoff_time = datetime.now(timezone.utc) - timedelta(minutes=120)
     
     # Base query for Events
     stmt = select(Event).options(selectinload(Event.league)).where(
@@ -69,7 +69,7 @@ async def get_fixtures_list(
         # "all events from now()-120min and active" as the BASE list.
         # "checkbox for live only = only events that are currently live" implies 
         # events that have ALREADY started (commence_time < now).
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         stmt = stmt.where(Event.commence_time <= now)
         # And ensure they aren't TOO old? The base filter >= cutoff_time handles that mostly.
     

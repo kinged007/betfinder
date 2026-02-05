@@ -22,7 +22,7 @@ from app.services.notifications.manager import NotificationManager
 from app.services.analytics.trade_finder import TradeOpportunity
 import random
 from app.services.bookmakers.base import BookmakerFactory, APIBookmaker
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pydantic import BaseModel
 from typing import List, Optional
 
@@ -357,7 +357,7 @@ async def quick_bet(params: QuickBetRequest, db: AsyncSession = Depends(get_db))
         stake=10.0,
         price=o.price,
         status="open", # Direct to open because we are manually forcing it
-        placed_at=datetime.utcnow(),
+        placed_at=datetime.now(timezone.utc),
         event_data=event_snapshot,
         market_data=market_snapshot,
         odd_data=odd_snapshot
@@ -372,7 +372,7 @@ async def quick_bet(params: QuickBetRequest, db: AsyncSession = Depends(get_db))
 @router.post("/odds/fetch-live", dependencies=[Depends(check_dev_mode)])
 async def fetch_live_odds(params: FetchLiveRequest, db: AsyncSession = Depends(get_db)):
     logs = []
-    def log(msg): logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}")
+    def log(msg): logs.append(f"[{datetime.now(timezone.utc).strftime('%H:%M:%S')}] {msg}")
     try:
         bm = await db.get(Bookmaker, params.bookmaker_id)
         if not bm: return {"status": "error", "message": "Bookmaker not found"}
@@ -445,7 +445,7 @@ async def fetch_live_odds(params: FetchLiveRequest, db: AsyncSession = Depends(g
 
                         # Also update timestamp if model supports it
                         if hasattr(odds_record, "updated_at"): 
-                            odds_record.updated_at = datetime.utcnow()
+                            odds_record.updated_at = datetime.now(timezone.utc)
                         
                         log(f"  UPDT: {ext_event_id} | {sel}: {old_price} -> {new_price}")
                         total_updated += 1

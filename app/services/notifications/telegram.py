@@ -1,7 +1,7 @@
 
 import httpx
 import hashlib
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from app.core.config import settings
 import logging
 from typing import Optional
@@ -23,7 +23,7 @@ class TelegramNotifier:
 
         # Deduplication
         msg_hash = hashlib.md5(message.encode()).hexdigest()
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         
         if msg_hash in self._cache:
             last_sent = self._cache[msg_hash]

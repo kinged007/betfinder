@@ -1,7 +1,7 @@
 
 from datetime import timedelta
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -32,7 +32,7 @@ class OddsAnalysisService:
             return
 
         # 2. Get Future Events
-        now = datetime.utcnow() - timedelta(hours=2)
+        now = datetime.now(timezone.utc) - timedelta(hours=2)
         events_res = await db.execute(select(Event).where(Event.commence_time > now))
         events = events_res.scalars().all()
         

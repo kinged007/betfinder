@@ -3,7 +3,7 @@ import httpx
 import asyncio
 import time
 from typing import List, Dict, Any, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from app.domain.interfaces import AbstractBookmaker
 from app.core.enums import BetResult, BetStatus
 from app.db.models import Bet
@@ -96,7 +96,11 @@ class APIBookmaker(SimpleBookmaker):
         if not last_sync:
             return self._check_odds_rate_limit()
             
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
+        # Ensure commence_time is timezone-aware
+        if commence_time.tzinfo is None:
+            commence_time = commence_time.replace(tzinfo=timezone.utc)
+
         time_to_event = commence_time - now
         
         # Throttling Rules:
@@ -127,7 +131,7 @@ class APIBookmaker(SimpleBookmaker):
 
     def record_sync(self, event_id: str):
         """Record the timestamp of a successful sync for an event."""
-        self._last_sync_times[event_id] = datetime.utcnow()
+        self._last_sync_times[event_id] = datetime.now(timezone.utc)
         self._last_odds_sync = time.time()
     
     def has_credentials(self) -> bool:

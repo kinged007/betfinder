@@ -94,8 +94,8 @@ async def test_connection(
                         current_config[key] = value
                 
                 bookmaker.config = current_config
-                from datetime import datetime
-                bookmaker.last_update = datetime.now()
+                from datetime import datetime, timezone
+                bookmaker.last_update = datetime.now(timezone.utc)
                 
                 await db.commit()
                 await db.refresh(bookmaker)
