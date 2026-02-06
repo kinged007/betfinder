@@ -1,0 +1,134 @@
+{% for bet in bets %}
+{% set major_row_class = 'bg-base-200/40' if loop.index0 % 2 != 0 else '' %}
+<tr class="bet-row-1 group transition-colors {{ major_row_class }}" data-bet-id="{{ bet.id }}">
+    <td colspan="7" class="pb-1 pt-4 px-2 md:px-4 border-none">
+        <div class="flex items-center gap-2 mb-1">
+            <span class="text-[9px] font-bold text-primary/70 uppercase tracking-widest">
+                {% if bet.event %}{{ bet.event.sport_key }}{% elif bet.event_data %}{{
+                bet.event_data.sport_key }}{% endif %}
+            </span>
+            <span class="text-[9px] opacity-40">•</span>
+            <span class="text-[9px] opacity-60 font-medium truncate min-w-0">
+                {% if bet.event and bet.event.league %}{{ bet.event.league.title }}{% endif %}
+            </span>
+
+            <!-- Time on right -->
+            <div class="ml-auto flex flex-row items-center gap-2 pr-2 shrink-0">
+                {% set commence_time = None %}
+                {% if bet.event %}{% set commence_time = bet.event.commence_time.isoformat() %}
+                {% elif bet.event_data and bet.event_data.commence_time %}{% set commence_time =
+                bet.event_data.commence_time %}{% endif %}
+
+                {% if commence_time %}
+                {% if 'Z' not in commence_time and '+' not in commence_time %}{% set commence_time =
+                commence_time + 'Z' %}{% endif %}
+                <div class="text-[10px] font-medium local-time" data-utc-time="{{ commence_time }}">
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        <div class="flex items-center gap-2 font-bold text-sm text-base-content/90 truncate ml-0">
+            {% if bet.event %}
+            {{ bet.event.home_team }} vs {{ bet.event.away_team }}
+            {% elif bet.event_data %}
+            {{ bet.event_data.home_team }} vs {{ bet.event_data.away_team }}
+            {% else %}
+            Unknown Event
+            {% endif %}
+            {% if bet.odd_data and bet.odd_data.url %}
+            <a href="{{ bet.odd_data.url }}" target="_blank"
+                class="btn btn-ghost btn-xs btn-circle p-0 h-4 w-4 min-h-0 opacity-40 hover:opacity-100"
+                title="Open on Bookmaker">
+                <svg class="w-3 h-3 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14">
+                    </path>
+                </svg>
+            </a>
+            {% endif %}
+        </div>
+    </td>
+</tr>
+<tr class="bet-row-2 group transition-colors border-b border-base-200 {{ major_row_class }}" data-bet-id="{{ bet.id }}">
+    <!-- Mobile Only Cell -->
+    <td class="py-2 px-2 md:hidden">
+        <div class="flex flex-wrap gap-1 items-center ml-0">
+            <span class="text-[9px] bg-base-200 px-1 rounded font-medium uppercase truncate max-w-[60px]">{{
+                bet.market_key }}</span>
+            <span class="text-[11px] font-bold text-primary truncate max-w-[100px]">{{
+                bet.selection|capitalize }}</span>
+            {% if bet.odd_data and bet.odd_data.point is not none %}
+            <span class="text-[11px] font-bold text-secondary">({{ '+' if bet.odd_data.point > 0 else ''
+                }}{{ bet.odd_data.point }})</span>
+            {% endif %}
+            <span class="text-[10px] font-bold text-accent ml-1">@ {{ "%.2f"|format(bet.price) }}</span>
+        </div>
+        <div class="mt-1 ml-0">
+            <span class="badge badge-outline badge-xs opacity-50 px-1">
+                {% if bet.bookmaker %}{{ bet.bookmaker.title }}{% else %}Unknown{% endif %}
+            </span>
+        </div>
+    </td>
+
+    <!-- Desktop: Market / Selection -->
+    <td class="hidden md:table-cell py-2 align-middle pl-2">
+        <div class="flex flex-wrap gap-1 items-center ml-0">
+            <span class="text-[9px] bg-base-200 px-1 rounded font-medium uppercase">{{ bet.market_key
+                }}</span>
+            <span class="text-[11px] font-bold text-primary">{{ bet.selection|capitalize }}</span>
+        </div>
+    </td>
+
+    <!-- Desktop: Odds -->
+    <td class="hidden md:table-cell py-2 align-middle">
+        <div class="flex items-center gap-1">
+            <span class="text-[11px] font-bold text-accent">@ {{ "%.2f"|format(bet.price) }}</span>
+            {% if bet.odd_data and bet.odd_data.point is not none %}
+            <span class="text-[11px] font-bold text-secondary">({{ '+' if bet.odd_data.point > 0 else ''
+                }}{{ bet.odd_data.point }})</span>
+            {% endif %}
+        </div>
+    </td>
+
+    <!-- Desktop: Bookmaker -->
+    <td class="hidden md:table-cell py-2 align-middle">
+        <span class="badge badge-outline badge-xs opacity-50 px-1">
+            {% if bet.bookmaker %}{{ bet.bookmaker.title }}{% else %}Unknown{% endif %}
+        </span>
+    </td>
+    <td class="py-2 align-middle text-right px-2 md:px-4">
+        <span class="text-[10px] opacity-70">
+            {% if bet.event and bet.event.commence_time %}{{ bet.event.commence_time.strftime('%Y-%m-%d %H:%M') }}{%
+            else %}-{% endif %}
+        </span>
+    </td>
+    <td class="text-right align-middle whitespace-nowrap">
+        <div class="font-bold text-[11px] md:text-sm">{{ "%.2f"|format(bet.stake) }}</div>
+    </td>
+    <td class="text-right align-middle whitespace-nowrap">
+        <div
+            class="font-bold text-[11px] md:text-sm {% if bet.status == 'won' %}text-success{% elif bet.status == 'lost' %}text-error{% elif bet.status == 'void' %}text-warning{% endif %}">
+            {% if bet.payout is not none %}
+            {{ "%.2f"|format(bet.payout) }}
+            {% else %}
+            <span class="opacity-20">{{ "%.2f"|format(bet.stake * bet.price) }}</span>
+            {% endif %}
+        </div>
+    </td>
+    <td class="align-middle text-right pr-4">
+        {% if bet.status == 'won' %}
+        <span class="badge badge-success badge-xs md:badge-sm capitalize">Won</span>
+        {% elif bet.status == 'lost' %}
+        <span class="badge badge-error badge-xs md:badge-sm capitalize">Lost</span>
+        {% elif bet.status == 'void' %}
+        <span class="badge badge-ghost badge-xs md:badge-sm capitalize">Void</span>
+        {% else %}
+        <span class="badge badge-outline badge-xs md:badge-sm capitalize">{{ bet.status }}</span>
+        {% endif %}
+    </td>
+</tr>
+{% else %}
+<tr>
+    <td colspan="6" class="text-center py-10 text-gray-400">No bets history found.</td>
+</tr>
+{% endfor %}

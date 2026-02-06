@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from app.routers import sports, bookmakers, presets, bets, views, events, public_views, ws
+from app.routers import sports, bookmakers, presets, bets, views, events, public_views, ws, analytics
 from app.routers.views import templates
 from app.core.security import AppStartupFailedException, AppStartupLoadingException, NotAuthenticatedException
 from app.services.notifications.telegram import TelegramNotifier
@@ -155,6 +155,7 @@ if settings.is_dev:
 
 
 # Include Routers - Frontend
+app.include_router(analytics.router)
 app.include_router(views.router, tags=["Views"])
 app.include_router(public_views.router, tags=["Views"])
 app.include_router(events.router, tags=["Events"])

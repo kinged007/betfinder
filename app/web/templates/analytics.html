@@ -1,0 +1,501 @@
+{% extends "base.html" %}
+
+{% block content %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script
+    src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+
+<div class="w-full md:max-w-7xl px-0 md:px-4">
+    <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6 px-4 md:px-0">
+        <h2 class="text-xl md:text-2xl font-bold">Analytics</h2>
+    </div>
+
+    <!-- Filters Section -->
+    <div class="card bg-base-100 shadow-xl mb-6">
+        <div class="card-body p-4">
+            <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2 md:gap-4 items-end">
+
+                <!-- Presets Filter -->
+                <div class="form-control w-full">
+                    <label class="label py-1"><span class="label-text text-xs">Presets</span></label>
+                    <div class="dropdown w-full" id="preset-dropdown">
+                        <label tabindex="0" class="btn btn-sm btn-outline w-full justify-between h-8 min-h-0">
+                            <span id="preset-label" class="truncate">All</span>
+                            <svg class="w-3 h-3 ml-1 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M19 9l-7 7-7-7"></path>
+                            </svg>
+                        </label>
+                        <ul tabindex="0"
+                            class="dropdown-content z-[10] menu p-2 shadow bg-base-100 rounded-box w-48 max-h-60 overflow-y-scroll overscroll-contain">
+                            {% for preset in presets %}
+                            <li>
+                                <label class="label cursor-pointer justify-start gap-2 p-1">
+                                    <input type="checkbox" class="checkbox checkbox-xs preset-filter"
+                                        value="{{ preset.id }}" onchange="updateAnalytics()">
+                                    <span class="label-text text-xs">{{ preset.name }}</span>
+                                </label>
+                            </li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Bookmakers Filter -->
+                <div class="form-control w-full">
+                    <label class="label py-1"><span class="label-text text-xs">Bookmakers</span></label>
+                    <div class="dropdown w-full" id="bm-dropdown">
+                        <label tabindex="0" class="btn btn-sm btn-outline w-full justify-between h-8 min-h-0">
+                            <span id="bm-label" class="truncate">All</span>
+                            <svg class="w-3 h-3 ml-1 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M19 9l-7 7-7-7"></path>
+                            </svg>
+                        </label>
+                        <ul tabindex="0"
+                            class="dropdown-content z-[10] menu p-2 shadow bg-base-100 rounded-box w-48 max-h-60 overflow-y-scroll overscroll-contain">
+                            {% for bm in bookmakers %}
+                            <li>
+                                <label class="label cursor-pointer justify-start gap-2 p-1">
+                                    <input type="checkbox" class="checkbox checkbox-xs bm-filter" value="{{ bm.id }}"
+                                        onchange="updateAnalytics()">
+                                    <span class="label-text text-xs">{{ bm.title }}</span>
+                                </label>
+                            </li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Sports Filter -->
+                <div class="form-control w-full">
+                    <label class="label py-1"><span class="label-text text-xs">Sports</span></label>
+                    <div class="dropdown w-full" id="sport-dropdown">
+                        <label tabindex="0" class="btn btn-sm btn-outline w-full justify-between h-8 min-h-0">
+                            <span id="sport-label" class="truncate">All</span>
+                            <svg class="w-3 h-3 ml-1 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M19 9l-7 7-7-7"></path>
+                            </svg>
+                        </label>
+                        <ul tabindex="0"
+                            class="dropdown-content z-[10] menu p-2 shadow bg-base-100 rounded-box w-48 max-h-60 overflow-y-scroll overscroll-contain">
+                            {% for sport in sports %}
+                            <li>
+                                <label class="label cursor-pointer justify-start gap-2 p-1">
+                                    <input type="checkbox" class="checkbox checkbox-xs sport-filter"
+                                        value="{{ sport.key }}" onchange="updateAnalytics()">
+                                    <span class="label-text text-xs">{{ sport.title }}</span>
+                                </label>
+                            </li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Leagues Filter -->
+                <div class="form-control w-full">
+                    <label class="label py-1"><span class="label-text text-xs">Leagues</span></label>
+                    <div class="dropdown w-full" id="league-dropdown">
+                        <label tabindex="0" class="btn btn-sm btn-outline w-full justify-between h-8 min-h-0">
+                            <span id="league-label" class="truncate">All</span>
+                            <svg class="w-3 h-3 ml-1 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M19 9l-7 7-7-7"></path>
+                            </svg>
+                        </label>
+                        <ul tabindex="0"
+                            class="dropdown-content z-[10] menu p-2 shadow bg-base-100 rounded-box w-64 max-h-60 overflow-y-scroll overscroll-contain">
+                            {% for league in leagues %}
+                            <li>
+                                <label class="label cursor-pointer justify-start gap-2 p-1">
+                                    <input type="checkbox" class="checkbox checkbox-xs league-filter"
+                                        value="{{ league.key }}" onchange="updateAnalytics()">
+                                    <span class="label-text text-xs truncate">{{ league.title }}</span>
+                                </label>
+                            </li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Date Range -->
+                <div class="form-control w-full">
+                    <label class="label py-1"><span class="label-text text-xs">From</span></label>
+                    <input type="date" id="date-from"
+                        class="input input-sm input-bordered w-full h-8 min-h-0 text-xs px-2"
+                        onchange="updateAnalytics()">
+                </div>
+                <div class="form-control w-full">
+                    <label class="label py-1"><span class="label-text text-xs">To</span></label>
+                    <input type="date" id="date-to"
+                        class="input input-sm input-bordered w-full h-8 min-h-0 text-xs px-2"
+                        onchange="updateAnalytics()">
+                </div>
+
+            </div>
+
+            <div class="flex justify-end mt-2">
+                <button class="btn btn-xs btn-ghost text-error" onclick="resetFilters()">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24"
+                        stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                    Reset Filters
+                </button>
+            </div>
+
+            <!-- Advanced Filters (Range) -->
+            <div class="collapse collapse-arrow bg-base-200 mt-4">
+                <input type="checkbox" />
+                <div class="collapse-title text-sm font-medium">
+                    Advanced Filters (Odds, Probability, Edge)
+                </div>
+                <div class="collapse-content">
+                    <div class="grid grid-cols-2 lg:grid-cols-6 gap-2 md:gap-4 pt-2">
+                        <div class="form-control w-full">
+                            <label class="label py-1"><span class="label-text text-xs">Min Odds</span></label>
+                            <input type="number" step="0.01" id="min-odds" class="input input-xs input-bordered w-full"
+                                onchange="updateAnalytics()">
+                        </div>
+                        <div class="form-control w-full">
+                            <label class="label py-1"><span class="label-text text-xs">Max Odds</span></label>
+                            <input type="number" step="0.01" id="max-odds" class="input input-xs input-bordered w-full"
+                                onchange="updateAnalytics()">
+                        </div>
+                        <div class="form-control w-full">
+                            <label class="label py-1"><span class="label-text text-xs">Min Edge</span></label>
+                            <input type="number" step="0.01" id="min-edge" class="input input-xs input-bordered w-full"
+                                onchange="updateAnalytics()">
+                        </div>
+                        <div class="form-control w-full">
+                            <label class="label py-1"><span class="label-text text-xs">Max Edge</span></label>
+                            <input type="number" step="0.01" id="max-edge" class="input input-xs input-bordered w-full"
+                                onchange="updateAnalytics()">
+                        </div>
+                        <div class="form-control w-full">
+                            <label class="label py-1"><span class="label-text text-xs">Min Prob</span></label>
+                            <input type="number" step="0.01" id="min-prob" class="input input-xs input-bordered w-full"
+                                onchange="updateAnalytics()">
+                        </div>
+                        <div class="form-control w-full">
+                            <label class="label py-1"><span class="label-text text-xs">Max Prob</span></label>
+                            <input type="number" step="0.01" id="max-prob" class="input input-xs input-bordered w-full"
+                                onchange="updateAnalytics()">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Stats & Chart Section -->
+    <div class="card bg-base-100 shadow-xl mb-6">
+        <div class="card-body p-4">
+            <div class="flex flex-wrap gap-6 mb-4 justify-center md:justify-start">
+                <div class="stat w-auto place-items-center md:place-items-start p-2">
+                    <div class="stat-title text-xs">Net Profit</div>
+                    <div class="stat-value text-2xl" id="stat-profit">0.00</div>
+                </div>
+                <div class="stat w-auto place-items-center md:place-items-start p-2">
+                    <div class="stat-title text-xs">ROI</div>
+                    <div class="stat-value text-xl" id="stat-roi">0.0%</div>
+                </div>
+                <div class="stat w-auto place-items-center md:place-items-start p-2">
+                    <div class="stat-title text-xs">Total Bets</div>
+                    <div class="stat-value text-xl" id="stat-bets">0</div>
+                </div>
+                <div class="stat w-auto place-items-center md:place-items-start p-2">
+                    <div class="stat-title text-xs">Win Rate</div>
+                    <div class="stat-value text-xl" id="stat-winrate">0.0%</div>
+                </div>
+            </div>
+
+            <div class="w-full h-[300px] md:h-[400px]">
+                <canvas id="bankrollChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Table Section -->
+    <div class="card bg-base-100 shadow-xl md:rounded-xl rounded-none">
+        <div class="card-body p-0 md:p-1 overflow-visible">
+            <table class="table w-full">
+                <thead>
+                    <tr class="bg-base-200 text-[10px] md:text-sm">
+                        <!-- Removed Checkbox and Event Header -->
+                        <th class="px-2 md:px-4 cursor-pointer hover:bg-base-300" onclick="toggleSort('market')">Market
+                            / Selection</th>
+                        <th class="px-2 md:px-4 hidden md:table-cell cursor-pointer hover:bg-base-300"
+                            onclick="toggleSort('price')">Odds</th>
+                        <th class="px-2 md:px-4 hidden md:table-cell cursor-pointer hover:bg-base-300"
+                            onclick="toggleSort('bookmaker')">Bookmaker</th>
+                        <th class="px-2 md:px-4 cursor-pointer hover:bg-base-300 text-right"
+                            onclick="toggleSort('event_date')">Event Date</th>
+                        <th class="px-2 md:px-4 text-right cursor-pointer hover:bg-base-300"
+                            onclick="toggleSort('stake')">Stake</th>
+                        <th class="px-2 md:px-4 text-right cursor-pointer hover:bg-base-300"
+                            onclick="toggleSort('payout')">Payout/PnL</th>
+                        <th class="px-2 md:px-4 text-right">Result</th>
+                    </tr>
+                </thead>
+                <tbody id="bets-body">
+                    <tr>
+                        <td colspan="6" class="text-center py-10">
+                            <span class="loading loading-spinner loading-lg"></span>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Pagination Controls -->
+    <div class="flex justify-center mt-4 mb-8" id="pagination-controls" style="display: none;">
+        <div class="join">
+            <button class="join-item btn btn-sm" id="btn-prev" onclick="changePage(currentPage - 1)">«</button>
+            <button class="join-item btn btn-sm pointer-events-none">Page <span id="page-num">1</span> of <span
+                    id="total-pages">1</span></button>
+            <button class="join-item btn btn-sm" id="btn-next" onclick="changePage(currentPage + 1)">»</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    let chartInstance = null;
+    let analyticsTimeout;
+
+    let currentSortBy = 'event_date';
+    let currentSortDesc = true;
+    let currentPage = 1;
+    let limit = 50;
+
+    document.addEventListener('DOMContentLoaded', () => {
+        initChart();
+        updateAnalytics();
+    });
+
+    function changePage(newPage) {
+        if (newPage < 1) return;
+        // logic to check max page is inside renderPagination or fetchData response
+        currentPage = newPage;
+        fetchData(false); // false = don't reset page
+    }
+
+    function toggleSort(field) {
+        if (currentSortBy === field) {
+            currentSortDesc = !currentSortDesc;
+        } else {
+            currentSortBy = field;
+            currentSortDesc = true;
+        }
+        currentPage = 1; // Reset page on sort change
+        updateAnalytics();
+    }
+
+
+    function initChart() {
+        const ctx = document.getElementById('bankrollChart').getContext('2d');
+        chartInstance = new Chart(ctx, {
+            type: 'line',
+            data: {
+                datasets: [{
+                    label: 'Bankroll',
+                    data: [], // {x: date, y: value}
+                    borderColor: '#22c55e', // Success color generally
+                    backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                    borderWidth: 2,
+                    pointRadius: 2,
+                    tension: 0.1,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: {
+                        type: 'time',
+                        time: {
+                            unit: 'day',
+                            tooltipFormat: 'PP pp'
+                        },
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.05)'
+                        }
+                    },
+                    y: {
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.05)'
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function (context) {
+                                let label = context.dataset.label || '';
+                                if (label) {
+                                    label += ': ';
+                                }
+                                if (context.parsed.y !== null) {
+                                    label += context.parsed.y.toFixed(2);
+                                }
+                                return label;
+                            },
+                            afterLabel: function (context) {
+                                if (context.raw && context.raw.pnl !== undefined) {
+                                    return `PnL: ${context.raw.pnl > 0 ? '+' : ''}${context.raw.pnl}`;
+                                }
+                                return '';
+                            }
+                        }
+                    },
+                    annotation: {
+                        // If we want vertical lines for presets, we need chartjs-plugin-annotation.
+                        // User requested vertical line for preset modification. 
+                        // We need the data first. For now, skipping plugin unless installed.
+                    }
+                }
+            }
+        });
+    }
+
+    function resetFilters() {
+        // Clear Dropdowns
+        document.querySelectorAll('.preset-filter, .bm-filter, .sport-filter, .league-filter').forEach(el => el.checked = false);
+
+        // Clear Dates
+        document.getElementById('date-from').value = '';
+        document.getElementById('date-to').value = '';
+
+        // Clear Advanced
+        document.getElementById('min-odds').value = '';
+        document.getElementById('max-odds').value = '';
+        document.getElementById('min-edge').value = '';
+        document.getElementById('max-edge').value = '';
+        document.getElementById('min-prob').value = '';
+        document.getElementById('max-prob').value = '';
+
+        updateAnalytics();
+    }
+
+    function updateAnalytics() {
+        clearTimeout(analyticsTimeout);
+        analyticsTimeout = setTimeout(fetchData, 500);
+        updateFilterLabels();
+    }
+
+    function updateFilterLabels() {
+        const presets = document.querySelectorAll('.preset-filter:checked');
+        document.getElementById('preset-label').textContent = presets.length > 0 ? `Selected: ${presets.length}` : 'All';
+
+        const bms = document.querySelectorAll('.bm-filter:checked');
+        document.getElementById('bm-label').textContent = bms.length > 0 ? `Selected: ${bms.length}` : 'All';
+
+        const sports = document.querySelectorAll('.sport-filter:checked');
+        document.getElementById('sport-label').textContent = sports.length > 0 ? `Selected: ${sports.length}` : 'All';
+
+        const leagues = document.querySelectorAll('.league-filter:checked');
+        document.getElementById('league-label').textContent = leagues.length > 0 ? `Selected: ${leagues.length}` : 'All';
+    }
+
+    async function fetchData() {
+        // Show loader if taking long? 
+        // Optional: Alpine morph creates smooth transition so maybe not fully clearing table.
+
+        const payload = {
+            presets: Array.from(document.querySelectorAll('.preset-filter:checked')).map(cb => parseInt(cb.value)),
+            bookmakers: Array.from(document.querySelectorAll('.bm-filter:checked')).map(cb => parseInt(cb.value)),
+            sports: Array.from(document.querySelectorAll('.sport-filter:checked')).map(cb => cb.value),
+            leagues: Array.from(document.querySelectorAll('.league-filter:checked')).map(cb => cb.value),
+            date_from: document.getElementById('date-from').value || null,
+            date_to: document.getElementById('date-to').value || null,
+            min_odds: document.getElementById('min-odds').value ? parseFloat(document.getElementById('min-odds').value) : null,
+            max_odds: document.getElementById('max-odds').value ? parseFloat(document.getElementById('max-odds').value) : null,
+            min_edge: document.getElementById('min-edge').value ? parseFloat(document.getElementById('min-edge').value) : null,
+            max_edge: document.getElementById('max-edge').value ? parseFloat(document.getElementById('max-edge').value) : null,
+            min_prob: document.getElementById('min-prob').value ? parseFloat(document.getElementById('min-prob').value) : null,
+            max_prob: document.getElementById('max-prob').value ? parseFloat(document.getElementById('max-prob').value) : null,
+            sort_by: currentSortBy,
+            sort_desc: currentSortDesc
+        };
+
+        try {
+            const response = await fetch('/analytics/data', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                console.error("Failed to fetch analytics data");
+                return;
+            }
+
+            const data = await response.json();
+
+            // Update Stats
+            document.getElementById('stat-profit').textContent = data.stats.total_profit.toFixed(2);
+            document.getElementById('stat-profit').classList.remove('text-success', 'text-error');
+            document.getElementById('stat-profit').classList.add(data.stats.total_profit >= 0 ? 'text-success' : 'text-error');
+
+            document.getElementById('stat-roi').textContent = data.stats.roi.toFixed(1) + '%';
+            document.getElementById('stat-roi').classList.remove('text-success', 'text-error');
+            document.getElementById('stat-roi').classList.add(data.stats.roi >= 0 ? 'text-success' : 'text-error');
+
+            document.getElementById('stat-bets').textContent = data.stats.total_bets;
+            document.getElementById('stat-winrate').textContent = data.stats.win_rate.toFixed(1) + '%';
+
+            // Update Chart
+            if (chartInstance) {
+                chartInstance.data.datasets[0].data = data.chart_data;
+                chartInstance.update();
+            }
+
+            // Update Table (Alpine Morph)
+            //  const tbody = document.getElementById('bets-body');
+            // Morph expects the target to have the same ID.
+            // The API returned `partial` has no outer ID if I didn't add it.
+            // Let's check `analytics_rows.html`. It iterates TRs. 
+            // We need to wrap it in a dummy tbody or just morph innerHTML? 
+            // Alpine Morph morphs one element to another. 
+            // Logic: Create a temp element string `<tbody id="bets-body">...rows...</tbody>`
+            // Then morph current `#bets-body` to new string.
+
+            const newHtml = `<tbody id="bets-body">${data.table_html}</tbody>`;
+            Alpine.morph(document.getElementById('bets-body'), newHtml);
+
+            // Update Pagination UI
+            if (data.pagination) {
+                const p = data.pagination;
+                const controls = document.getElementById('pagination-controls');
+
+                if (p.total_pages > 1) {
+                    controls.style.display = 'flex';
+                    document.getElementById('page-num').textContent = p.page;
+                    document.getElementById('total-pages').textContent = p.total_pages;
+
+                    document.getElementById('btn-prev').disabled = p.page <= 1;
+                    document.getElementById('btn-next').disabled = p.page >= p.total_pages;
+                } else {
+                    controls.style.display = 'none';
+                }
+            } else {
+                document.getElementById('pagination-controls').style.display = 'none';
+            }
+
+
+        } catch (e) {
+            console.error(e);
+        }
+    }
+</script>
+{% endblock %}
