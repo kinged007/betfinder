@@ -231,6 +231,16 @@ def build_app():
     
     if os_name == "darwin":
         base_dir = f"{APP_NAME}.app"
+        
+        # 5a. Ad-Hoc Sign the App (Fixes "App is damaged" on some systems)
+        print("Applying ad-hoc signature...")
+        try:
+            sign_cmd = ["codesign", "--force", "--deep", "--sign", "-", base_dir]
+            subprocess.check_call(sign_cmd, cwd=root_dir)
+            print("Ad-hoc signature applied successfully.")
+        except Exception as e:
+            print(f"Warning: Ad-hoc signing failed: {e}")
+
         # On macOS, we MUST use the system 'zip' with '-y' to preserve symlinks in the .app bundle.
         # Python's zipfile/shutil usually breaks them, causing "App is damaged" errors.
         zip_cmd = ["zip", "-r", "-y", f"{archive_base}.zip", base_dir]
