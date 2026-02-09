@@ -174,6 +174,12 @@ def build_app():
             
             # Update app_output_dir just for the final print statement to point to the .app
             app_output_dir = macos_app_root
+            
+            # Clean up the raw 'BetFinderApp' folder created by COLLECT, as we only want the .app
+            raw_folder = os.path.join(release_dir, APP_NAME)
+            if os.path.exists(raw_folder):
+                 print(f"Removing raw build folder: {raw_folder}")
+                 shutil.rmtree(raw_folder)
     else:
         # Windows / Linux (OneDir)
         # PyInstaller creates a folder named APP_NAME in release_dir
