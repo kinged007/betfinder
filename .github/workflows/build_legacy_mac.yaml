@@ -1,0 +1,56 @@
+name: Build Legacy Mac (Self-Hosted)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-legacy:
+    name: Build on macOS 10
+    runs-on: [self-hosted, macos-10]
+    
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '10.15'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: "pyproject.toml"
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Build App
+        run: uv run build
+
+      - name: Rename Artifact
+        id: rename
+        shell: bash
+        run: |
+          # Find the generated zip
+          ZIP_PATH=$(find packages -name "BetFinder-Darwin-*.zip" | head -n 1)
+          if [ -z "$ZIP_PATH" ]; then
+            echo "::error::No zip file found!"
+            exit 1
+          fi
+          
+          DIR=$(dirname "$ZIP_PATH")
+          FILENAME=$(basename "$ZIP_PATH")
+          # Replace Darwin with MacOS-10
+          NEW_FILENAME="${FILENAME/Darwin/MacOS-10}"
+          mv "$ZIP_PATH" "$DIR/$NEW_FILENAME"
+          
+          echo "artifact_path=$DIR/$NEW_FILENAME" >> $GITHUB_OUTPUT
+          echo "Created artifact: $NEW_FILENAME"
+
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: ${{ steps.rename.outputs.artifact_path }}
