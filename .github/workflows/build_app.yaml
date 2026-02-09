@@ -15,7 +15,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [windows-latest, ubuntu-latest, macos-latest]
+        os: [windows-latest, ubuntu-latest, macos-13]
+    
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '10.15'
     
     steps:
       - name: Checkout code

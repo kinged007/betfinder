@@ -45,3 +45,10 @@ coll = COLLECT(
     upx_exclude=[],
     name='BetFinderApp',
 )
+
+app = BUNDLE(
+    coll,
+    name='BetFinderApp.app',
+    icon=os.path.join('assets', 'icon.png'),
+    bundle_identifier='com.betfinder.app',
+)
