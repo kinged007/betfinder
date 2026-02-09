@@ -45,7 +45,14 @@ jobs:
           mv "$ZIP_PATH" "$DIR/$NEW_FILENAME"
           
           echo "artifact_path=$DIR/$NEW_FILENAME" >> $GITHUB_OUTPUT
+          echo "artifact_name=$NEW_FILENAME" >> $GITHUB_OUTPUT
           echo "Created artifact: $NEW_FILENAME"
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.rename.outputs.artifact_name }}
+          path: ${{ steps.rename.outputs.artifact_path }}
 
       - name: Upload to Release
         uses: softprops/action-gh-release@v2
