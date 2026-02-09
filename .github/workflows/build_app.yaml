@@ -51,3 +51,14 @@ jobs:
             packages/v*/**/BetFinderApp
             packages/v*/**/*.app
             packages/v*/**/*.exe
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: |
+            packages/v*/**/*.zip
+            packages/v*/**/*.tar.gz
+            packages/v*/**/*.exe
+            packages/v*/**/*.dmg
+

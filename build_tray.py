@@ -208,7 +208,7 @@ def build_app():
     print(f"  {app_output_dir}")
     print("\nDirectory structure:")
     print(f"  {release_dir}/")
-    print(f"    └── {APP_NAME}/  (Zip this folder to distribute)")
+    print(f"    |-- {APP_NAME}/  (Zip this folder to distribute)")
 
 if __name__ == "__main__":
     build_app()
