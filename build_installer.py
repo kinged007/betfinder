@@ -24,16 +24,16 @@ def get_version():
 def create_iss_script(version):
     """Create Inno Setup script."""
     
-    # We expect the built files to be in dist/v{version}/windows/BetFinderApp
-    # But wait, PyInstaller outputs to dist/v{version}/windows/BetFinderApp
+    # We expect the built files to be in packages/v{version}/windows/BetFinderApp
+    # But wait, PyInstaller outputs to packages/v{version}/windows/BetFinderApp
     # We should package that folder.
     
-    source_dir = os.path.abspath(os.path.join("dist", f"v{version}", "windows", "BetFinderApp"))
+    source_dir = os.path.abspath(os.path.join("packages", f"v{version}", "windows", "BetFinderApp"))
     if not os.path.exists(source_dir):
         print(f"Error: Build directory not found at {source_dir}. Run 'uv run build' first.")
         sys.exit(1)
         
-    output_dir = os.path.abspath(os.path.join("dist", f"v{version}", "windows"))
+    output_dir = os.path.abspath(os.path.join("packages", f"v{version}", "windows"))
     
     script_content = f"""
 [Setup]
@@ -113,7 +113,7 @@ def build_installer():
     try:
         subprocess.check_call([iscc_path, iss_file])
         print("Installer compilation successful!")
-        print(f"Installer available at: dist/v{version}/windows/BetFinder_Installer_v{version}.exe")
+        print(f"Installer available at: packages/v{version}/windows/BetFinder_Installer_v{version}.exe")
     except subprocess.CalledProcessError as e:
         print(f"Failed to compile installer: {e}")
         sys.exit(1)

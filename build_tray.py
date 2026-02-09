@@ -12,7 +12,7 @@ import sys
 APP_NAME = "BetFinderApp"
 MAIN_SCRIPT = "tray_app.py"
 ICON_PATH = os.path.join("assets", "icon.png")
-DIST_BASE_DIR = "dist"
+DIST_BASE_DIR = "packages"
 BUILD_WORK_DIR = "build"
 
 # UV Download URLs
@@ -90,7 +90,7 @@ def build_app():
     os_name = platform.system().lower()
     
     # 1. Prepare Release Paths
-    # Output structure: dist/v{version}/{os_name}/BetFinderApp/
+    # Output structure: packages/v{version}/{os_name}/BetFinderApp/
     release_dir = os.path.join(DIST_BASE_DIR, f"v{version}", os_name)
     app_output_dir = os.path.join(release_dir, APP_NAME)
     

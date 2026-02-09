@@ -1,11 +1,13 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 
+import os
+
 a = Analysis(
     ['tray_app.py'],
     pathex=[],
     binaries=[],
-    datas=[('assets\\icon.png', 'assets')],
+    datas=[(os.path.join('assets', 'icon.png'), 'assets')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -32,7 +34,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['assets\\icon.png'],
+    icon=[os.path.join('assets', 'icon.png')],
 )
 coll = COLLECT(
     exe,

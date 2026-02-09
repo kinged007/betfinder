@@ -23,6 +23,8 @@ logs
 *.sqlite
 *.db
 
+# packages
+packages
 
 # Inno Setup generated script
 betfinder_installer.iss

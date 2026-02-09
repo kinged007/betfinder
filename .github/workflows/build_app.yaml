@@ -48,6 +48,6 @@ jobs:
         with:
           name: betfinder-${{ runner.os }}
           path: |
-            dist/v*/**/BetFinderApp
-            dist/v*/**/*.app
-            dist/v*/**/*.exe
+            packages/v*/**/BetFinderApp
+            packages/v*/**/*.app
+            packages/v*/**/*.exe
