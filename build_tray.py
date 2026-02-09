@@ -231,9 +231,21 @@ def build_app():
     
     if os_name == "darwin":
         base_dir = f"{APP_NAME}.app"
-
-    shutil.make_archive(archive_base, archive_format, root_dir, base_dir)
-    print(f"Archive created: {archive_base}.{archive_format}")
+        # On macOS, we MUST use the system 'zip' with '-y' to preserve symlinks in the .app bundle.
+        # Python's zipfile/shutil usually breaks them, causing "App is damaged" errors.
+        zip_cmd = ["zip", "-r", "-y", f"{archive_base}.zip", base_dir]
+        print(f"Running system zip: {' '.join(zip_cmd)}")
+        try:
+            subprocess.check_call(zip_cmd, cwd=root_dir)
+            print(f"Archive created: {archive_base}.zip")
+        except Exception as e:
+            print(f"Error creating zip with system command: {e}")
+            print("Falling back to shutil (MAY BREAK SYMLINKS)...")
+            shutil.make_archive(archive_base, archive_format, root_dir, base_dir)
+    else:
+        # Windows/Linux
+        shutil.make_archive(archive_base, archive_format, root_dir, base_dir)
+        print(f"Archive created: {archive_base}.{archive_format}")
 
 if __name__ == "__main__":
     build_app()
