@@ -6,7 +6,7 @@ on:
 jobs:
   build-legacy:
     name: Build on macOS 10
-    runs-on: [self-hosted, macos-10]
+    runs-on: self-hosted
     
     env:
       MACOSX_DEPLOYMENT_TARGET: '10.15'
