@@ -210,5 +210,24 @@ def build_app():
     print(f"  {release_dir}/")
     print(f"    |-- {APP_NAME}/  (Zip this folder to distribute)")
 
+    # 5. Create Archive
+    print("Creating archive...")
+    archive_name = f"BetFinder-{os_name.capitalize()}-v{version}"
+    archive_base = os.path.join(release_dir, archive_name)
+    
+    # Format: zip for Windows/Mac, gztar for Linux
+    archive_format = "gztar" if os_name == "linux" else "zip"
+    
+    # For macOS .app, we want to zip the .app bundle itself, not the content inside
+    # For Windows/Linux, we zip the folder
+    root_dir = release_dir
+    base_dir = APP_NAME
+    
+    if os_name == "darwin":
+        base_dir = f"{APP_NAME}.app"
+
+    shutil.make_archive(archive_base, archive_format, root_dir, base_dir)
+    print(f"Archive created: {archive_base}.{archive_format}")
+
 if __name__ == "__main__":
     build_app()
