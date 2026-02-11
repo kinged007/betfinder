@@ -178,6 +178,26 @@ class DataIngester:
         )
         logger.info(f"Fetched {len(bookmakers_data)} (events with) bookmakers.") # Note: get_bookmakers returns events with bookmakers
         await self._process_odds_data(db, bookmakers_data) 
+
+        # Ensure all registered bookmaker classes exist in DB
+        from app.services.bookmakers.base import BookmakerFactory
+        registered = BookmakerFactory.get_registered_bookmakers_info()
+        created_count = 0
+        for info in registered:
+            result = await db.execute(select(Bookmaker).where(Bookmaker.key == info["key"]))
+            if not result.scalar_one_or_none():
+                new_bk = Bookmaker(
+                    key=info["key"],
+                    title=info["title"],
+                    model_type=info["model_type"],
+                    active=False,
+                )
+                db.add(new_bk)
+                created_count += 1
+                logger.info(f"Created bookmaker '{info['title']}' ({info['key']}) from registered class.")
+        if created_count > 0:
+            await db.commit()
+
         logger.info("sync_bookmakers completed.")
 
     async def sync_league(

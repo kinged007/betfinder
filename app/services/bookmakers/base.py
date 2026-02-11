@@ -656,6 +656,18 @@ class BookmakerFactory:
         return keys
 
     @classmethod
+    def get_registered_bookmakers_info(cls) -> List[Dict[str, str]]:
+        """Return key, title, and model_type for all registered bookmaker classes (excluding SimpleBookmaker)."""
+        results = []
+        for key, bk_cls in cls._registry.items():
+            if bk_cls == SimpleBookmaker or key == "simple":
+                continue
+            title = getattr(bk_cls, 'title', key)
+            model_type = 'api' if issubclass(bk_cls, APIBookmaker) else 'simple'
+            results.append({"key": key, "title": title, "model_type": model_type})
+        return results
+
+    @classmethod
     def get_all_schemas(cls) -> Dict[str, List[Dict[str, Any]]]:
         return {k: v.get_config_schema() for k, v in cls._registry.items()}
 

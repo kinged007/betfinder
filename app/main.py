@@ -79,6 +79,24 @@ async def check_and_sync_initial_data():
             logger.info(f"Bootstrap: Auto-promoted {updated_count} bookmakers to 'api' (Implementation or Credentials detected)")
             await db.commit()
 
+        # Ensure all registered bookmaker classes exist in DB
+        registered = BookmakerFactory.get_registered_bookmakers_info()
+        created_count = 0
+        for info in registered:
+            r = await db.execute(select(Bookmaker).where(Bookmaker.key == info["key"]))
+            if not r.scalar_one_or_none():
+                new_bk = Bookmaker(
+                    key=info["key"],
+                    title=info["title"],
+                    model_type=info["model_type"],
+                    active=False,
+                )
+                db.add(new_bk)
+                created_count += 1
+        if created_count > 0:
+            await db.commit()
+            logger.info(f"Bootstrap: Created {created_count} bookmakers from registered classes.")
+
         # Always run analysis after sync check
         # Changed this to run from scheduler next_run_time
         break
