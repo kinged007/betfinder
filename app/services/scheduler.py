@@ -72,36 +72,128 @@ async def job_preset_sync():
         standardizer = DataStandardizer(mapping_repo)
         ingester = DataIngester(client, standardizer)
         
-        synced_any = False
+        # Fetch active Bookmakers ONCE
+        bk_res = await db.execute(select(Bookmaker).where(Bookmaker.active == True, Bookmaker.model_type == 'api'))
+        active_bookmakers = bk_res.scalars().all()
+        
+        # --- Aggregation Phase ---
+        # Map: league_key -> { 'presets': [Preset], 'markets': set() }
+        league_map = {}
         
         for preset in presets:
+            # Determine leagues for this preset
+            leagues = preset.leagues or []
+            # Check if we should auto-include popular leagues for these sports
+            # Since leagues may contain data from previous save, we empty it if 
+            # preset wants popular leagues instead of specific leagues
+            if preset.show_popular_leagues:
+                leagues = []
+            
+            if not leagues and not preset.sports:
+                leagues = ['upcoming']
+            elif not leagues and preset.sports and not preset.show_popular_leagues: 
+                # Preset has no selected leagues.... 
+                # Fetching all leagues will consume a lot of api credits
+                # So, we can set to upcoming and skip
+                leagues = ['upcoming']
+            elif preset.sports and preset.show_popular_leagues:
+                # Preset wants popular leagues for sport. Ignore leagues list.
+                leagues = []
+                logger.info(f"Preset {preset.name} has sports but no leagues. Fetching popular leagues...")
+                # Fetch popular leagues for these sports
+                # We need to query the League table
+                # We can cache this or query per preset. Querying is safer.
+                
+                # We need a synchronous-style query execution here or just await
+                # preset.sports is a list of sport keys
+                
+                # We need to handle this efficiently. multiple presets might need this.
+                # But let's do it simple first.
+                stmt_pop = select(League.key).where(
+                    League.sport_key.in_(preset.sports),
+                    League.popular == True,
+                    League.active == True
+                )
+                pop_res = await db.execute(stmt_pop)
+                pop_leagues = pop_res.scalars().all()
+                
+                if pop_leagues:
+                    leagues = list(pop_leagues)
+                    logger.info(f"  -> Added {len(leagues)} popular leagues for preset {preset.name}")
+                else:
+                    logger.debug(f"  -> No popular leagues found for sports: {preset.sports}")
+            
+            # Determine markets
+            p_markets = set(preset.markets) if preset.markets else {"h2h", "spreads", "totals"}
+            
+            for league_key in leagues:
+                if league_key not in league_map:
+                    league_map[league_key] = {
+                        'presets': [],
+                        'markets': set()
+                    }
+                league_map[league_key]['presets'].append(preset)
+                league_map[league_key]['markets'].update(p_markets)
+        
+        # --- Execution Phase ---
+        synced_any = False
+        
+        for league_key, data in league_map.items():
+            combined_markets = list(data['markets'])
+            markets_str = ",".join(combined_markets)
+            associated_presets = data['presets']
+            preset_names = [p.name for p in associated_presets]
+            
             try:
-                await ingester.sync_data_for_preset(db, preset)
-                preset.last_sync_at = datetime.now(timezone.utc)
-                db.add(preset)
-                # Commit after each sync to save progress and release locks
+                # Sync League (One Request)
+                await ingester.sync_league(
+                    db, 
+                    league_key=league_key, 
+                    markets=markets_str, 
+                    active_bookmakers=active_bookmakers,
+                    preset_names=preset_names
+                )
+                
+                # Update last_sync_at for all associated presets
+                # We do this individually to be safe, but can commit in batch
+                for p in associated_presets:
+                    p.last_sync_at = datetime.now(timezone.utc)
+                    db.add(p)
+                
                 await db.commit()
                 synced_any = True
+                
             except Exception as e:
-                logger.error(f"Failed to sync for preset {preset.name}: {e}")
-                # Rollback this transaction so we can continue with others
-                await db.rollback()
-        
+                logger.error(f"Failed to sync league {league_key}: {e}")
+                # We don't rollback everything, just skip updating timestamps for these presets?
+                # Actually, ingester exceptions might have already rolled back internally or not.
+                # ingester methods usually do their own commits for data.
+                # If ingester failed, we probably shouldn't update last_sync_at.
+                # But we should continue to next league.
+                pass
+
         if synced_any:
-            logger.info("New data fetched, triggering analysis...")
             logger.info("New data fetched, triggering analysis...")
             await OddsAnalysisService.calculate_benchmark_values(db)
             
             # --- Notification Phase ---
-            # Now that analysis is done (Edge/True Odds calculated), check for notifications
             logger.info("Analysis complete. Checking for trade notifications...")
+            # We iterate ALL synced presets.
+            # Since presets might be in multiple leagues, we might process them multiple times?
+            # Let's simple iterate the original list 'presets' and check if they were updated?
+            # Or just check all due presets again?
+            # Efficient way: unique set of preset IDs that were part of successful syncs.
+            # But simpler: just check all 'presets' we loaded initially.
+            
             try:
                 for preset_obj in presets:
-                    # Refresh preset to ensure it's attached/fresh if needed, though simpler to use ID
-                    # We need the config, so let's reload it to be safe or use existing if active
-                    # preset_obj might be detached after commits.
+                    # Reload to get fresh state if needed, though mostly config we need
                     preset = await db.get(Preset, preset_obj.id)
                     if not preset: continue
+                    
+                    # Only check if it was actually synced?
+                    # If we failed to sync its league, we probably shouldn't notify?
+                    # But checking opportunities is harmless (just won't find new ones if no data).
                     
                     notif_enabled = preset.other_config.get("notification_new_bet", "true")
                     if notif_enabled == "true":

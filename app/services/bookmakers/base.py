@@ -10,6 +10,7 @@ from sqlalchemy import select
 from app.domain.interfaces import AbstractBookmaker
 from app.core.enums import BetResult, BetStatus
 from app.db.models import Bet, Mapping, League
+from app.schemas.odds import OddsEvent, OddsSport
 
 # --- Fuzzy Matching Helpers ---
 
@@ -73,7 +74,7 @@ class SimpleBookmaker(AbstractBookmaker):
     name = "simple"
     title = "Simple Bookmaker"
 
-    async def obtain_sports(self) -> List[Dict[str, Any]]:
+    async def obtain_sports(self) -> List[OddsSport]:
         return []
 
     async def obtain_odds(
@@ -102,7 +103,7 @@ class SimpleBookmaker(AbstractBookmaker):
         self, 
         league_key: str, 
         allowed_markets: Optional[List[str]] = None
-    ) -> List[Dict[str, Any]]:
+    ) -> List[OddsEvent]:
         """
         Fetch odds for a complete league and return in TheOddsAPI-compatible format (List of Events).
         Used by Ingester for bulk sync of new events and full market refreshes.
@@ -112,7 +113,7 @@ class SimpleBookmaker(AbstractBookmaker):
             allowed_markets: Optional list of market keys to filter
             
         Returns:
-            List[Dict]: List of Event objects containing Bookmakers -> Markets -> Outcomes.
+            List[OddsEvent]: List of Event objects containing Bookmakers -> Markets -> Outcomes.
         """
         return []
 

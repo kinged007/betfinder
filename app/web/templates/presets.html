@@ -148,12 +148,12 @@
                         </div>
                     </div>
 
-                    <!-- Show All Leagues Toggle -->
+                    <!-- Show Popular Leagues Toggle -->
                     <div class="form-control">
                         <label class="label cursor-pointer justify-start gap-3">
-                            <input type="checkbox" name="show_all_leagues" class="toggle toggle-sm"
+                            <input type="checkbox" name="show_popular_leagues" class="toggle toggle-sm"
                                 onchange="toggleLeagues()" />
-                            <span class="label-text">Show All Leagues (no filter)</span>
+                            <span class="label-text">Show Popular Leagues</span>
                         </label>
                     </div>
 
@@ -586,9 +586,9 @@
     }
 
     function toggleLeagues() {
-        const showAll = document.querySelector('input[name="show_all_leagues"]').checked;
+        const showPopular = document.querySelector('input[name="show_popular_leagues"]').checked;
         const container = document.getElementById('leagues-container');
-        if (showAll) {
+        if (showPopular) {
             container.classList.add('hidden');
         } else {
             container.classList.remove('hidden');
@@ -673,7 +673,7 @@
         setCheckboxes('markets', preset.markets);
         setCheckboxes('selections', preset.selections);
 
-        form.querySelector('[name="show_all_leagues"]').checked = preset.show_all_leagues;
+        form.querySelector('[name="show_popular_leagues"]').checked = preset.show_popular_leagues || false;
         form.querySelector('[name="min_odds"]').value = preset.min_odds;
         form.querySelector('[name="max_odds"]').value = preset.max_odds;
         form.querySelector('[name="min_edge"]').value = preset.min_edge;
@@ -747,7 +747,7 @@
             active: form.querySelector('[name="active"]').checked,
             auto_trade: form.querySelector('[name="auto_trade"]').checked,
             ignore_benchmarks: form.querySelector('[name="ignore_benchmarks"]').checked,
-            show_all_leagues: form.querySelector('[name="show_all_leagues"]').checked,
+            show_popular_leagues: form.querySelector('[name="show_popular_leagues"]').checked,
             min_odds: parseFloat(form.querySelector('[name="min_odds"]').value) || null,
             max_odds: parseFloat(form.querySelector('[name="max_odds"]').value) || null,
             min_edge: parseFloat(form.querySelector('[name="min_edge"]').value) || null,

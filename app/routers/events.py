@@ -1,9 +1,9 @@
-from fastapi import APIRouter, Request, Depends, Query
-from fastapi.templating import Jinja2Templates
+from fastapi import APIRouter, Depends, Query
+
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_, distinct, case
 from app.api.deps import get_db
-from app.db.models import Event, Sport, League, Bookmaker, Market, Odds
+from app.db.models import Event, Bookmaker, Market, Odds
 from app.core.config import settings
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
@@ -11,35 +11,9 @@ from sqlalchemy.orm import selectinload
 from app.core.security import check_session
 
 router = APIRouter(dependencies=[Depends(check_session)])
-templates = Jinja2Templates(directory="app/web/templates")
 
 
-@router.get("/fixtures", tags=["Web"])
-async def fixtures_page(request: Request, db: AsyncSession = Depends(get_db)):
 
-    # Fetch initial filter data
-    s_res = await db.execute(select(Sport).where(Sport.active == True).order_by(Sport.title))
-    sports = s_res.scalars().all()
-
-    b_res = await db.execute(select(Bookmaker).order_by(Bookmaker.title))
-    bookmakers = b_res.scalars().all()
-    
-    # Leagues (active only)
-    l_res = await db.execute(select(League).where(League.active == True).order_by(League.title))
-    leagues = l_res.scalars().all()
-
-    return templates.TemplateResponse(
-        "fixtures.html",
-        {
-            "request": request,
-            "title": "Fixtures",
-            "active": "fixtures",
-            "sports": sports,
-            "bookmakers": bookmakers,
-            "leagues": leagues,
-            "is_dev": settings.is_dev,
-        }
-    )
 
 @router.get("/api/fixtures/list", tags=["API"])
 async def get_fixtures_list(

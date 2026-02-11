@@ -90,7 +90,7 @@ class PresetBase(BaseModel):
     hours_before_min: Optional[int] = None
     hours_before_max: Optional[int] = None
     default_stake: Optional[float] = None
-    show_all_leagues: bool = False
+    show_popular_leagues: bool = False
     after_trade_action: str = "keep"
     other_config: Optional[Dict[str, Any]] = None
     

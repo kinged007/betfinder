@@ -1,7 +1,7 @@
 
 from typing import List, Optional
 from datetime import datetime
-from sqlalchemy import String, Boolean, ForeignKey, Integer, Float, JSON, DateTime, Index, func
+from sqlalchemy import String, Boolean, ForeignKey, Integer, Float, JSON, DateTime, Index, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base, TimestampMixin
 
@@ -20,6 +20,7 @@ class League(Base, TimestampMixin):
     group: Mapped[str] = mapped_column(String)
     title: Mapped[str] = mapped_column(String)
     has_outrights: Mapped[bool] = mapped_column(Boolean, default=False)
+    popular: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("0"))
     sport_key: Mapped[str] = mapped_column(ForeignKey("sport.key"))
     
     sport: Mapped["Sport"] = relationship(back_populates="leagues")
@@ -173,7 +174,7 @@ class Preset(Base, TimestampMixin):
     default_stake: Mapped[Optional[float]] = mapped_column(Float, default=10.0)
     
     # UI/Logic Flags
-    show_all_leagues: Mapped[bool] = mapped_column(Boolean, default=False)
+    show_popular_leagues: Mapped[bool] = mapped_column(Boolean, default=False)
     after_trade_action: Mapped[str] = mapped_column(String, default="keep") # remove_match, remove_trade, keep, remove_line
     
     other_config: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)

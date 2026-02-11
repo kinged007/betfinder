@@ -6,9 +6,15 @@ from app.services.bookmakers.base import APIBookmaker
 from app.core.enums import BetResult, BetStatus
 from app.services.bookmakers.sx_bet_market_types import MarketType
 from app.db.models import Bet
+from app.schemas.odds import OddsEvent, OddsBookmaker, OddsMarket, OddsOutcome, OddsSport
 
 # Constants for SX Network (Chain ID 4162)
 SX_MAINNET_TOKENS = {
+    "USDC": {"address": "0x6629Ce1Cf35Cc1329ebB4F63202F3f197b3F050B", "decimals": 6},
+    "WSX": {"address": "0x3E96B0a25d51e3Cc89C557f152797c33B839968f", "decimals": 18}
+}
+# Constants for SX Testnet (Chain ID 4162)
+SX_TESTNET_TOKENS = {
     "USDC": {"address": "0x6629Ce1Cf35Cc1329ebB4F63202F3f197b3F050B", "decimals": 6},
     "WSX": {"address": "0x3E96B0a25d51e3Cc89C557f152797c33B839968f", "decimals": 18}
 }
@@ -93,7 +99,7 @@ class SXBetBookmaker(APIBookmaker):
             print(f"SX.Bet Connection Failed: {e}")
             return False
 
-    async def obtain_sports(self) -> List[Dict[str, Any]]:
+    async def obtain_sports(self) -> List[OddsSport]:
         """
         Fetch active sports and leagues from SX.Bet.
         Returns a list of dicts consistent with our internal Sport/League structure.
@@ -132,17 +138,17 @@ class SXBetBookmaker(APIBookmaker):
                 if not internal_key:
                     continue
                 
-                standardized_sports.append({
-                    "key": internal_key,  # Use internal key instead of sx_bet_ prefix
-                    "group": sport_name,
-                    "title": league_label,
-                    "active": True,
-                    "has_outrights": False, 
-                    "details": {
+                standardized_sports.append(OddsSport(
+                    key=internal_key,  # Use internal key instead of sx_bet_ prefix
+                    group=sport_name,
+                    title=league_label,
+                    active=True,
+                    has_outrights=False, 
+                    details={
                         "sport_id": sport_id,
                         "league_id": league_id
                     }
-                })
+                ))
                 
             return standardized_sports
             
@@ -182,9 +188,9 @@ class SXBetBookmaker(APIBookmaker):
             print(f"Error fetching events for league {league_key}: {e}")
             return []
 
-    async def fetch_league_odds(self, league_key: str, allowed_markets: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+    async def fetch_league_odds(self, league_key: str, allowed_markets: Optional[List[str]] = None) -> List[OddsEvent]:
         """
-        Fetch odds for a complete league and return in TheOddsAPI-compatible format (List of Events).
+        Fetch odds for a complete league and return in TheOddsAPI-compatible format (List of OddsEvent).
         Used by Ingester for bulk sync.
         """
         # Use get_external_id to reverse map internal key to SX Bet league ID
@@ -237,7 +243,7 @@ class SXBetBookmaker(APIBookmaker):
                         event_market_types[event_id] = set()
                     event_market_types[event_id].add(m_type)
 
-            events_map = {} # eventId -> { ...event_data, bookmakers: [...] }
+            events_map: Dict[str, OddsEvent] = {} # eventId -> OddsEvent
             
             for odd_entry in odds_data:
                 market_hash = odd_entry.get("marketHash")
@@ -252,15 +258,15 @@ class SXBetBookmaker(APIBookmaker):
                     
                 # Initialize Event in Map if needed
                 if event_id not in events_map:
-                    events_map[event_id] = {
-                        "id": event_id,
-                        "sport_key": league_key,
-                        "sport_title": market_info.get("sportLabel"),
-                        "commence_time": datetime.fromtimestamp(market_info.get("gameTime", 0), timezone.utc).isoformat(),
-                        "home_team": market_info.get("teamOneName"),
-                        "away_team": market_info.get("teamTwoName"),
-                        "bookmakers": {} # keyed by bookie key (sx_bet)
-                    }
+                    events_map[event_id] = OddsEvent(
+                        id=event_id,
+                        sport_key=league_key,
+                        sport_title=market_info.get("sportLabel") or "",
+                        commence_time=datetime.fromtimestamp(market_info.get("gameTime", 0), timezone.utc),
+                        home_team=market_info.get("teamOneName") or "Unknown Home",
+                        away_team=market_info.get("teamTwoName") or "Unknown Away",
+                        bookmakers=[] 
+                    )
                 
                 # Normalize Market Key using MarketType class
                 m_type = market_info.get("type")
@@ -294,7 +300,7 @@ class SXBetBookmaker(APIBookmaker):
                     point = market_info.get("line")
                      
                 # Prepare Outcomes
-                outcomes = []
+                outcomes: List[OddsOutcome] = []
                 
                 outcome_one_name = market_info.get("outcomeOneName")
                 if outcome_one_name == "Tie":
@@ -304,6 +310,19 @@ class SXBetBookmaker(APIBookmaker):
                 if outcome_two_name == "Tie":
                     outcome_two_name = "draw"
                 
+                # Internal helper for normalization (simplified for SX Bet specific logic if needed, or generic)
+                # For now using simple logic:
+                def normalize_selection(sel_name, m_key, h_team, a_team):
+                    sel_lower = sel_name.lower()
+                    if m_key in ['h2h', 'spreads', 'moneyline']:
+                        if sel_lower == h_team.lower(): return 'home'
+                        if sel_lower == a_team.lower(): return 'away'
+                        if sel_lower == 'draw': return 'draw'
+                    if m_key in ['totals']:
+                        if sel_lower.startswith('over'): return 'over'
+                        if sel_lower.startswith('under'): return 'under'
+                    return sel_name
+
                 # Process Outcome One (maker perspective) -> assign to Outcome Two (taker perspective)
                 if outcome_two_name and not outcome_two_name.startswith("Not "):
                     odd_1_data = odd_entry.get("outcomeOne", {})
@@ -317,12 +336,15 @@ class SXBetBookmaker(APIBookmaker):
                                 price_1 = round(1.0 / taker_prob_1, 3)
                                 
                                 if price_1 > 1.0:
-                                    outcomes.append({
-                                        "name": outcome_two_name,
-                                        "price": price_1,
-                                        "point": point,
-                                        "sid": "outcomeTwo"
-                                    })
+                                    outcomes.append(OddsOutcome(
+                                        selection=outcome_two_name,
+                                        normalized_selection=normalize_selection(outcome_two_name, market_key, events_map[event_id].home_team, events_map[event_id].away_team),
+                                        price=price_1,
+                                        point=point,
+                                        sid="outcomeTwo",
+                                        market_sid=market_hash,
+                                        event_sid=event_id
+                                    ))
                         except (ValueError, TypeError, ZeroDivisionError):
                             pass
                 
@@ -339,12 +361,15 @@ class SXBetBookmaker(APIBookmaker):
                                 price_2 = round(1.0 / taker_prob_2, 3)
                                 
                                 if price_2 > 1.0:
-                                    outcomes.append({
-                                        "name": outcome_one_name,
-                                        "price": price_2,
-                                        "point": point,
-                                        "sid": "outcomeOne"
-                                    })
+                                    outcomes.append(OddsOutcome(
+                                        selection=outcome_one_name,
+                                        normalized_selection=normalize_selection(outcome_one_name, market_key, events_map[event_id].home_team, events_map[event_id].away_team),
+                                        price=price_2,
+                                        point=point,
+                                        sid="outcomeOne",
+                                        market_sid=market_hash,
+                                        event_sid=event_id
+                                    ))
                         except (ValueError, TypeError, ZeroDivisionError):
                             pass
                 
@@ -352,30 +377,28 @@ class SXBetBookmaker(APIBookmaker):
                     continue
 
                 # Add to Event -> Bookmaker
-                bk_key = self.name # sx_bet
-                if bk_key not in events_map[event_id]["bookmakers"]:
-                    events_map[event_id]["bookmakers"][bk_key] = {
-                        "key": bk_key,
-                        "title": self.title,
-                        "last_update": datetime.now(timezone.utc).isoformat(),
-                        "sid": event_id,
-                        "markets": []
-                    }
+                # Find or create bookmaker entry in the event
+                current_event = events_map[event_id]
+                bk_entry = next((bk for bk in current_event.bookmakers if bk.key == self.name), None)
                 
-                events_map[event_id]["bookmakers"][bk_key]["markets"].append({
-                    "key": market_key,
-                    "sid": market_hash,
-                    "outcomes": outcomes,
-                    "last_update": datetime.now(timezone.utc).isoformat()
-                })
+                if not bk_entry:
+                    bk_entry = OddsBookmaker(
+                        key=self.name,
+                        title=self.title,
+                        last_update=datetime.now(timezone.utc),
+                        markets=[],
+                        sid=event_id
+                    )
+                    current_event.bookmakers.append(bk_entry)
+                
+                bk_entry.markets.append(OddsMarket(
+                    key=market_key,
+                    sid=market_hash,
+                    outcomes=outcomes,
+                    last_update=datetime.now(timezone.utc)
+                ))
             
-            # Convert Map to List
-            final_output = []
-            for ev in events_map.values():
-                ev["bookmakers"] = list(ev["bookmakers"].values())
-                final_output.append(ev)
-                
-            return final_output
+            return list(events_map.values())
 
         except Exception as e:
             print(f"Error fetching odds for {league_key}: {e}")
@@ -464,7 +487,7 @@ class SXBetBookmaker(APIBookmaker):
         target_sx_ids = set(sx_id_to_uuid.keys()) if event_ids else None
         
         for event in events_data:
-            sx_event_id = event.get("id") # This is "L..."
+            sx_event_id = event.id # This is "L..."
             
             # Filter by mapped SX IDs
             if target_sx_ids and sx_event_id not in target_sx_ids:
@@ -482,26 +505,26 @@ class SXBetBookmaker(APIBookmaker):
                 continue
 
             # Dig into bookmakers -> markets -> outcomes
-            formatted_bks = event.get("bookmakers", [])
+            # formatted_bks = event.bookmakers # Now object access
             
-            for bk in formatted_bks:
-                if bk["key"] != self.name:
+            for bk in event.bookmakers:
+                if bk.key != self.name:
                     continue
                     
-                event_sid = bk.get("sid")
+                event_sid = bk.sid
                 
-                for market in bk.get("markets", []):
-                    market_key = market.get("key")
-                    market_sid = market.get("sid")
+                for market in bk.markets:
+                    market_key = market.key
+                    market_sid = market.sid
                     
-                    for outcome in market.get("outcomes", []):
+                    for outcome in market.outcomes:
                         flat_odds.append({
                             "external_event_id": internal_uuid, # CRITICAL: Return UUID, not SX ID
                             "market_key": market_key,
-                            "selection": outcome.get("name"),
-                            "price": outcome.get("price"),
-                            "point": outcome.get("point"),
-                            "sid": outcome.get("sid", "outcomeOne"), 
+                            "selection": outcome.selection,
+                            "price": outcome.price,
+                            "point": outcome.point,
+                            "sid": outcome.sid or "outcomeOne", 
                             "market_sid": market_sid,
                             "event_sid": event_sid
                         })

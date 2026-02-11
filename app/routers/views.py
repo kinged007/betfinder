@@ -154,6 +154,32 @@ async def active_leagues_view(request: Request, db: AsyncSession = Depends(get_d
         }
     )
 
+@router.get("/fixtures")
+async def fixtures_page(request: Request, db: AsyncSession = Depends(get_db)):
+    # Fetch initial filter data
+    s_res = await db.execute(select(Sport).where(Sport.active == True).order_by(Sport.title))
+    sports = s_res.scalars().all()
+
+    b_res = await db.execute(select(Bookmaker).order_by(Bookmaker.title))
+    bookmakers = b_res.scalars().all()
+    
+    # Leagues (active only)
+    l_res = await db.execute(select(League).where(League.active == True).order_by(League.title))
+    leagues = l_res.scalars().all()
+
+    return templates.TemplateResponse(
+        "fixtures.html",
+        {
+            "request": request,
+            "title": "Fixtures",
+            "active": "fixtures",
+            "sports": sports,
+            "bookmakers": bookmakers,
+            "leagues": leagues,
+            "is_dev": settings.is_dev,
+        }
+    )
+
 from sqlalchemy.orm import selectinload
 
 @router.get("/my-bets")

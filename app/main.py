@@ -146,6 +146,8 @@ app.include_router(sports.router, prefix=settings.API_V1_STR, tags=["Sports"])
 app.include_router(bookmakers.router, prefix=settings.API_V1_STR, tags=["Bookmakers"])
 app.include_router(presets.router, prefix=settings.API_V1_STR, tags=["Presets"])
 app.include_router(bets.router, prefix=settings.API_V1_STR, tags=["Bets"])
+from app.routers import leagues
+app.include_router(leagues.router, prefix=settings.API_V1_STR, tags=["Leagues"])
 app.include_router(ws.router, prefix="/ws", tags=["Websocket"])
 
 
