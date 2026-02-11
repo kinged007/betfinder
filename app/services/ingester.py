@@ -1,13 +1,16 @@
 
 from datetime import datetime, timedelta, timezone
 import logging
+import hashlib
 from typing import List, Optional, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, and_
 from app.services.the_odds_api import TheOddsAPIClient
 from app.services.standardizer import DataStandardizer
-from app.db.models import Sport, League, Event, Market, Odds, Bookmaker
+from app.db.models import Sport, League, Event, Market, Odds, Bookmaker, Mapping
 from app.repositories.base import BaseRepository
+import difflib
+import re
 from app.core.config import settings
 from app.services.analytics.trade_finder import TradeFinderService
 from app.services.notifications.manager import NotificationManager
@@ -27,10 +30,6 @@ class DataIngester:
         logger.info("Starting sync_sports...")
         
         # Check if we need to sync
-        # Logic: If DB has sports and the most recent valid update was < 7 days ago, skip.
-        # But Sport table uses TimestampMixin (updated_at).
-        
-        # Check count
         result = await db.execute(select(Sport).limit(1))
         first_sport = result.scalars().first()
         
@@ -39,15 +38,10 @@ class DataIngester:
              logger.info("Sports table empty. Sync required.")
              should_sync = True
         else:
-             # Check age. Assuming if one is old, we resync all or check metadata. 
-             # Simplest: Check if last successful sync was recent.
-             # Since we don't store "Last Sync Job", we check the updated_at of a sport.
              if first_sport.updated_at:
-                 # Ensure updated_at is timezone-aware
                  updated_at = first_sport.updated_at
                  if updated_at.tzinfo is None:
                      updated_at = updated_at.replace(tzinfo=timezone.utc)
-                     
                  age = datetime.now(timezone.utc) - updated_at
                  if age > timedelta(days=7):
                      logger.info(f"Sports data > 7 days old ({age}). Sync required.")
@@ -60,10 +54,50 @@ class DataIngester:
         if not should_sync:
             return
 
-        logger.info("Fetching sports from API...")
-        data = await self.api_client.get_sports()
-        logger.info(f"Fetched {len(data)} sports from API.")
+        # 1. Fetch from TheOddsAPI
+        logger.info("Fetching sports from TheOddsAPI...")
+        try:
+            toa_data = await self.api_client.get_sports()
+            logger.info(f"Fetched {len(toa_data)} sports from TheOddsAPI.")
+            await self._process_sports_data(db, toa_data, source="the_odds_api")
+        except Exception as e:
+            error_msg = f"Failed to fetch sports from TheOddsAPI: {e}"
+            logger.error(error_msg)
+            # Send Notification
+            notif_manager = NotificationManager(db)
+            await notif_manager.send_error_notification("Sync Sports Failed (TOA)", error_msg)
+
+        # 2. Fetch from other Active API Bookmakers
+        from app.services.bookmakers.base import BookmakerFactory
         
+        # Get active API bookmakers
+        result = await db.execute(select(Bookmaker).where(Bookmaker.active == True, Bookmaker.model_type == 'api'))
+        active_bookmakers = result.scalars().all()
+        
+        for bk_model in active_bookmakers:
+            # Skip TheOddsAPI (handled by client) if it were a model, but it's usually not.
+            # If the bookmaker has 'obtain_sports' capability (e.g. SXBet), call it.
+            try:
+                bk_service = BookmakerFactory.get_bookmaker(bk_model.key, bk_model.config or {}, db)
+                if hasattr(bk_service, "obtain_sports"):
+                    logger.info(f"Fetching sports from {bk_model.title}...")
+                    bk_sports = await bk_service.obtain_sports()
+                    if bk_sports:
+                        logger.info(f"Fetched {len(bk_sports)} sports from {bk_model.title}.")
+                        await self._process_sports_data(db, bk_sports, source=bk_model.key)
+            except Exception as e:
+                error_msg = f"Failed to fetch sports from {bk_model.title}: {e}"
+                logger.error(error_msg)
+                notif_manager = NotificationManager(db)
+                await notif_manager.send_error_notification(f"Sync Sports Failed ({bk_model.title})", error_msg)
+        
+        logger.info("sync_sports completed.")
+
+    async def _process_sports_data(self, db: AsyncSession, data: List[Dict[str, Any]], source: str = "the_odds_api"):
+        """
+        Process sports/leagues data from any source.
+        Bookmakers should have already resolved mappings and returned internal keys.
+        """
         for item in data:
             key = item["key"]
             group = item["group"]
@@ -71,8 +105,10 @@ class DataIngester:
             active = item["active"]
             has_outrights = item["has_outrights"]
             
+            # Standardize Sport First
             sport_key = group.lower().replace(" ", "")
             
+            # Ensure Sport Exists
             existing_sport = await self.sport_repo.get(db, sport_key)
             if not existing_sport:
                 logger.debug(f"Creating new sport: {sport_key}")
@@ -82,18 +118,14 @@ class DataIngester:
                     "group": group,
                     "active": True
                 })
-            
-            # Update Leagues? logic remains same...
-            
+
+            # Update or Create League
             existing_league = await self.league_repo.get(db, key)
             if existing_league:
-                 # Update timestamp implicitly via onupdate in DB or explicit touch?
-                 # BaseRepository update updates timestamp if Mixin works.
                  await self.league_repo.update(db, db_obj=existing_league, obj_in={
                      "active": active,
-                     "title": title,
-                     "group": group,
-                     "has_outrights": has_outrights, # fixed field name
+                     "group": group, 
+                     "has_outrights": has_outrights, 
                      "sport_key": sport_key
                  })
             else:
@@ -106,8 +138,6 @@ class DataIngester:
                     "has_outrights": has_outrights,
                     "sport_key": sport_key
                 })
-        
-        logger.info("sync_sports completed.")
 
     async def sync_odds(self, db: AsyncSession, sport_key: str):
         odds_data = await self.api_client.get_odds(sport_key)
@@ -119,7 +149,7 @@ class DataIngester:
         logger.info(f"Starting get_bookmakers for regions: {regions}...")
         bookmakers_data = await self.api_client.get_bookmakers(regions=regions)
         logger.info(f"Fetched {len(bookmakers_data)} bookmakers.")
-        await self._process_odds_data(db, bookmakers_data) # process_odds data adds bookmakers too
+        await self._process_odds_data(db, bookmakers_data) 
         logger.info("sync_bookmakers completed.")
 
     async def sync_data_for_preset(self, db: AsyncSession, preset: Any):
@@ -140,37 +170,118 @@ class DataIngester:
         regions = settings.THE_ODDS_API_REGIONS
         markets = ",".join(preset.markets) if preset.markets else "h2h,spreads,totals"
 
-        # Get list of active bookmaker keys from db for this preset
-        result = await db.execute(select(Bookmaker.key).where(Bookmaker.active == True))
-        bookmaker_keys = result.scalars().all()
-        logger.info(f"Syncing data for Preset: {preset.name} with bookmakers: {bookmaker_keys}")
+        # Get list of active API bookmaker models from db
+        result = await db.execute(select(Bookmaker).where(Bookmaker.active == True, Bookmaker.model_type == 'api'))
+        active_bookmakers = result.scalars().all()
+        logger.info(f"Syncing data for Preset: {preset.name} with bookmakers: {[bk.key for bk in active_bookmakers]}")
+
+        # Instantiate bookmaker services
+        from app.services.bookmakers.base import BookmakerFactory
+        bookmaker_services = {}
+        for bk_model in active_bookmakers:
+            try:
+                bk_service = BookmakerFactory.get_bookmaker(bk_model.key, bk_model.config or {}, db)
+                if hasattr(bk_service, "fetch_league_odds"):
+                    bookmaker_services[bk_model.key] = bk_service
+            except Exception as e:
+                logger.error(f"Failed to instantiate bookmaker {bk_model.key}: {e}")
         
-        # We iterate through leagues because The-Odds-API is primarily league-based (sport_key).
         for league_key in leagues:
             try:
                 logger.info(f"Fetching odds for league: {league_key} (Preset: {preset.name})")
-                odds_data = await self.api_client.get_odds(
-                    sport_key=league_key,
-                    regions=regions,
-                    markets=markets,
-                    bookmakers= ",".join(bookmaker_keys)
-                )
                 
-                # We could filter by time window here if the API doesn't support it,
-                # but _process_odds_data handles basic event creation/update.
-                # The filtering logic for the trade feed itself is in TradeFinderService.
-                await self._process_odds_data(db, odds_data)
+                # Try TheOddsAPI first (if available)
+                try:
+                    odds_data = await self.api_client.get_odds(
+                        sport_key=league_key,
+                        regions=regions,
+                        markets=markets,
+                        bookmakers=",".join([bk.key for bk in active_bookmakers])
+                    )
+                    await self._process_odds_data(db, odds_data)
+                except Exception as toa_error:
+                    logger.debug(f"TheOddsAPI fetch failed for {league_key}: {toa_error}")
+                
+                # Try each API bookmaker
+                for bk_key, bk_service in bookmaker_services.items():
+                    try:
+                        # Parse markets string to list for filtering
+                        allowed_markets = markets.split(",") if markets else None
+                        odds_data = await bk_service.fetch_league_odds(league_key, allowed_markets=allowed_markets)
+                        if odds_data:
+                            await self._process_odds_data(db, odds_data)
+                    except Exception as bk_error:
+                        logger.debug(f"{bk_key} fetch failed for {league_key}: {bk_error}")
                 
             except Exception as e:
-                logger.error(f"Error syncing league {league_key} for preset {preset.name}: {e}")
+                error_msg = f"Error syncing league {league_key} for preset {preset.name}: {e}"
+                logger.error(error_msg)
+                notif_manager = NotificationManager(db)
+                await notif_manager.send_error_notification(f"Sync Preset Failed ({preset.name})", error_msg)
         
         logger.info(f"Completed sync for preset: {preset.name}")
 
-        logger.info(f"Completed sync for preset: {preset.name}")
+    async def _find_existing_event(
+        self,
+        db: AsyncSession,
+        league_key: str,
+        commence_time: datetime,
+        home_team: str,
+        away_team: str,
+        time_tolerance_minutes: int = 5
+    ) -> Optional[str]:
+        """
+        Find existing event by league + time + team fuzzy match.
+        Returns event ID if found, None otherwise.
+        """
+        from datetime import timedelta
+        from app.services.bookmakers.base import token_sort_ratio
+        
+        # Calculate time window
+        time_start = commence_time - timedelta(minutes=time_tolerance_minutes)
+        time_end = commence_time + timedelta(minutes=time_tolerance_minutes)
+        
+        # Query events in same league and time window
+        result = await db.execute(
+            select(Event).where(
+                and_(
+                    Event.league_key == league_key,
+                    Event.commence_time >= time_start,
+                    Event.commence_time <= time_end
+                )
+            )
+        )
+        candidates = result.scalars().all()
+        
+        if not candidates:
+            return None
+        
+        # Fuzzy match on team names
+        best_match = None
+        best_score = 0.0
+        
+        for candidate in candidates:
+            # Calculate fuzzy match scores for both teams
+            home_score = token_sort_ratio(home_team, candidate.home_team)
+            away_score = token_sort_ratio(away_team, candidate.away_team)
+            
+            # Average score (both teams must match well)
+            avg_score = (home_score + away_score) / 2.0
+            
+            if avg_score > best_score:
+                best_score = avg_score
+                best_match = candidate
+        
+        # Return match if confidence is high
+        if best_score > 0.85 and best_match:
+            logger.info(f"Matched event '{home_team} vs {away_team}' to existing '{best_match.home_team} vs {best_match.away_team}' (score: {best_score:.2f})")
+            return best_match.id
+        
+        return None
 
     async def _process_odds_data(self, db: AsyncSession, odds_data: List[Dict[str, Any]]):
         for event_data in odds_data:
-            event_id = event_data["id"]
+            bookmaker_event_id = event_data["id"]  # External ID from bookmaker
             commence_time = datetime.fromisoformat(event_data["commence_time"].replace("Z", "+00:00"))
             
             # The-Odds-API 'sport_key' in odds response IS the league slug (e.g. 'soccer_epl')
@@ -179,6 +290,22 @@ class DataIngester:
             # Lookup league to get the actual parent sport key (e.g. 'soccer')
             league = await db.get(League, league_slug)
             parent_sport_key = league.sport_key if league else league_slug
+            
+            home_team = event_data["home_team"]
+            away_team = event_data["away_team"]
+            
+            # Try to find existing event using fuzzy matching
+            event_id = await self._find_existing_event(
+                db, league_slug, commence_time, home_team, away_team
+            )
+            
+            # If not found, generate deterministic internal ID
+            if not event_id:
+                # Use hash of league + teams + time for deterministic ID
+                event_id = hashlib.md5(
+                    f"{league_slug}_{home_team}_{away_team}_{commence_time.isoformat()}".encode()
+                ).hexdigest()
+                logger.debug(f"Generated new event ID: {event_id} for '{home_team} vs {away_team}'")
             
             existing_event = await self.event_repo.get(db, event_id)
             if existing_event:

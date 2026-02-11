@@ -25,10 +25,11 @@ class AbstractBookmaker(ABC):
         """Fetch sports available on the bookmaker."""
         pass
 
+    # TODO SPK: sport_key should be league_key for all bookmakers. BK will use mapping to get their league id to find odds
     @abstractmethod
     async def obtain_odds(
         self, 
-        sport_key: str, 
+        league_key: str, 
         event_ids: List[str], 
         log: Optional[Any] = None  # Callable[[str], None]
     ) -> List[Dict[str, Any]]:

@@ -219,16 +219,18 @@ class TradeFinderService:
         only for events that should be synced based on throttling rules.
         """
         
-        # Group opportunities by bookmaker
-        bookmaker_groups: Dict[str, List[TradeOpportunity]] = {}
+        # Group opportunities by (bookmaker.key, league.key)
+        # Note: We rely on event.league_key which should be populated.
+        # If league is None, we might face issues, but events usually have it.
+        bookmaker_league_groups: Dict[tuple, List[TradeOpportunity]] = {}
         for opp in opportunities:
-            key = opp.bookmaker.key
-            if key not in bookmaker_groups:
-                bookmaker_groups[key] = []
-            bookmaker_groups[key].append(opp)
+            key = (opp.bookmaker.key, opp.event.league_key)
+            if key not in bookmaker_league_groups:
+                bookmaker_league_groups[key] = []
+            bookmaker_league_groups[key].append(opp)
         
-        # For each bookmaker, sync eligible events
-        for bookmaker_key, opps in bookmaker_groups.items():
+        # For each group, sync eligible events
+        for (bookmaker_key, league_key), opps in bookmaker_league_groups.items():
             try:
                 # Get bookmaker config from DB
                 result = await db.execute(
@@ -260,7 +262,7 @@ class TradeFinderService:
                 if not events_to_sync:
                     continue
                 
-                await self.sync_bookmaker_odds(db, bookmaker_model, list(events_to_sync), opps[0].event.sport_key)
+                await self.sync_bookmaker_odds(db, bookmaker_model, list(events_to_sync), league_key)
                 
             except Exception as e:
                 # Log the error
@@ -268,7 +270,7 @@ class TradeFinderService:
                 await db.rollback()
                 pass
 
-    async def sync_bookmaker_odds(self, db: AsyncSession, bookmaker_model: Bookmaker, event_ids: List[str], sport_key: str) -> int:
+    async def sync_bookmaker_odds(self, db: AsyncSession, bookmaker_model: Bookmaker, event_ids: List[str], league_key: str) -> int:
         """
         Sync live odds for a specific bookmaker and a list of events.
         Low level method used by both opportunity-based sync and global sync.
@@ -283,19 +285,24 @@ class TradeFinderService:
             
             # Call obtain_odds for this bookmaker
             # This API call fetches fresh data
+            # TODO SPK: sport_key should be league_key for all bookmakers. BK will use mapping to get their league id to find odds
             raw_odds = await bookmaker_instance.obtain_odds(
-                sport_key=sport_key,
+                league_key=league_key,
                 event_ids=event_ids,
             )
             
             if not raw_odds:
+                print(f"DEBUG: No odds returned for {bookmaker_model.key} / {league_key}")
                 return 0
+            
+            print(f"DEBUG: {bookmaker_model.key} returned {len(raw_odds)} odds entries for {league_key}")
 
             # Optimization: Bulk fetch existing odds for update
             # We want to find Odds matching (ext_event_id, market_key, sel/sel_norm) for this bookmaker
             
             # Get event IDs from response to scope our query
             received_event_ids = list(set([entry.get("external_event_id") for entry in raw_odds if entry.get("external_event_id")]))
+            print(f"DEBUG: Updating odds for events: {received_event_ids}")
             
             stmt = (
                 select(Odds, Market.event_id, Market.key)
@@ -307,6 +314,7 @@ class TradeFinderService:
             )
             res = await db.execute(stmt)
             existing_rows = res.all()
+            print(f"DEBUG: Found {len(existing_rows)} existing odds rows in DB for these events.")
             
             # Build Lookup Map
             # Keys: (ext_event_id, market_key, normalized_selection) -> Odds Object
@@ -329,9 +337,6 @@ class TradeFinderService:
                 ext_event_id = entry.get("external_event_id")
                 mkt_key = entry.get("market_key")
                 sel = entry.get("selection")
-                # Ensure we have norm sel if possible, or we rely on exact match
-                # Standardizer usually handles normalization before this step? 
-                # obtain_odds returns "selection" usually.
                 
                 new_price = entry.get("price")
                 new_point = entry.get("point")
@@ -340,6 +345,10 @@ class TradeFinderService:
                 odds_record = lookup_map.get((ext_event_id, mkt_key, sel))
                 
                 if odds_record:
+                    # Debug log significant changes or specific event updates
+                    if abs(odds_record.price - new_price) > 0.001:
+                        print(f"DEBUG: Updating price {ext_event_id}/{mkt_key}/{sel}: {odds_record.price} -> {new_price}")
+                    
                     # Update fields
                     odds_record.price = new_price
                     odds_record.point = new_point
@@ -405,9 +414,9 @@ class TradeFinderService:
                 
             try:
                 # 2. Find events this bookmaker has odds for
-                # We group by sport_key to keep requests efficient
+                # We group by league_key to keep requests efficient
                 stmt = (
-                    select(Event.id, Event.sport_key, Event.commence_time)
+                    select(Event.id, Event.league_key, Event.commence_time)
                     .join(Market).join(Odds)
                     .where(
                         Odds.bookmaker_id == bm.id,
@@ -421,15 +430,15 @@ class TradeFinderService:
                 if not events:
                     continue
                 
-                # Group by sport_key
-                sport_groups: Dict[str, List[tuple]] = {}
-                for eid, sk, ct in events:
-                    if sk not in sport_groups:
-                        sport_groups[sk] = []
-                    sport_groups[sk].append((eid, ct))
+                # Group by league_key
+                league_groups: Dict[str, List[tuple]] = {}
+                for eid, lk, ct in events:
+                    if lk not in league_groups:
+                        league_groups[lk] = []
+                    league_groups[lk].append((eid, ct))
                 
                 total_bm_synced = 0
-                for sport_key, ev_list in sport_groups.items():
+                for league_key, ev_list in league_groups.items():
                     # Filter based on bookmaker's internal throttling
                     bookmaker_instance = BookmakerFactory.get_bookmaker(bm.key, bm.config or {}, db)
                     events_to_sync = [str(eid) for eid, ct in ev_list if bookmaker_instance.should_sync_event(str(eid), ct)]
@@ -437,7 +446,7 @@ class TradeFinderService:
                     if not events_to_sync:
                         continue
                     
-                    updated = await self.sync_bookmaker_odds(db, bm, events_to_sync, sport_key)
+                    updated = await self.sync_bookmaker_odds(db, bm, events_to_sync, league_key)
                     total_bm_synced += updated
                     
                 logger.info(f"Global sync for {bm.title} complete. Total updated: {total_bm_synced}")

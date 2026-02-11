@@ -383,7 +383,7 @@ async def fetch_live_odds(params: FetchLiveRequest, db: AsyncSession = Depends(g
         await bm_instance.authorize()
         log("Authorization successful")
         
-        query = select(Event.id, Event.sport_key).join(Market).join(Odds).where(Odds.bookmaker_id == bm.id)
+        query = select(Event.id, Event.league_key).join(Market).join(Odds).where(Odds.bookmaker_id == bm.id)
         if params.future_only:
             from datetime import timezone
             buffer_time = datetime.now(timezone.utc) - timedelta(minutes=120)
@@ -393,18 +393,19 @@ async def fetch_live_odds(params: FetchLiveRequest, db: AsyncSession = Depends(g
         if not events:
             log("No events found."); return {"status": "success", "logs": logs, "message": "No events"}
         log(f"Found {len(events)} events.")
-        sports_map = {}
-        for eid, sport_key in events:
-            if sport_key not in sports_map:
-                sports_map[sport_key] = []
-            sports_map[sport_key].append(eid)
+        leagues_map = {}
+        for eid, league_key in events:
+            if league_key not in leagues_map:
+                leagues_map[league_key] = []
+            leagues_map[league_key].append(eid)
             
         total_updated = 0
-        for sport_key, ext_ids in sports_map.items():
-            log(f"Fetching {sport_key}...")
+        for league_key, ext_ids in leagues_map.items():
+            log(f"Fetching {league_key}...")
             try:
                 # Use obtain_odds if implemented
-                raw_odds = await bm_instance.obtain_odds(sport_key, ext_ids, log=log)
+                # TODO SPK: sport_key should be league_key for all bookmakers. BK will use mapping to get their league id to find odds
+                raw_odds = await bm_instance.obtain_odds(league_key, ext_ids, log=log)
                 log(f"Received {len(raw_odds)} odds.")
                 for entry in raw_odds:
                     ext_event_id = entry.get("external_event_id")

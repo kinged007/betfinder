@@ -29,9 +29,10 @@ class CoralBookmakerSimulator(APIBookmaker):
         """Always return True as requested."""
         return True
 
+    # TODO SPK: sport_key should be league_key for all bookmakers. BK will use mapping to get their league id to find odds
     async def obtain_odds(
         self, 
-        sport_key: str, 
+        league_key: str, 
         event_ids: List[str], 
         log: Optional[Any] = None
     ) -> List[Dict[str, Any]]:

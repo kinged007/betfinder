@@ -126,15 +126,17 @@ class ConnectionManager:
 
                 active_presets = list(self.active_connections.keys())
                 
-                async with AsyncSessionLocal() as db:
-                    for preset_id in active_presets:
-                        # Double check if still has connections (async gap)
-                        if preset_id not in self.active_connections:
-                            continue
+                for preset_id in active_presets:
+                    # Double check if still has connections (async gap)
+                    if preset_id not in self.active_connections:
+                        continue
 
-                        try:
+                    try:
+                        # Use a FRESH session per preset to avoid SQLite stale reads
+                        async with AsyncSessionLocal() as db:
                             # 1. Scan
                             opportunities = await self.trade_finder.scan_opportunities(db, preset_id)
+                            logger.debug(f"[WS Poll] Preset {preset_id}: found {len(opportunities)} opportunities")
                             
                             # 2. Process Changes & Serialize
                             opportunities_json = []
@@ -191,8 +193,8 @@ class ConnectionManager:
                                 else:
                                     logger.debug(f"Skipping sync for preset {preset_id} - previous sync still running.")
 
-                        except Exception as e:
-                            logger.error(f"Error processing preset {preset_id}: {e}")
+                    except Exception as e:
+                        logger.error(f"Error processing preset {preset_id}: {e}")
                             
             except Exception as e:
                 logger.error(f"Global Loop Critical Error: {e}")

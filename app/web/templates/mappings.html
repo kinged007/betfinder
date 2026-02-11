@@ -1,0 +1,238 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mx-auto p-4">
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-3xl font-bold">Mappings</h1>
+    </div>
+
+    <!-- Filters -->
+    <div class="card bg-base-100 shadow-xl mb-6">
+        <div class="card-body p-4">
+            <form action="/mappings" method="get" class="flex flex-wrap gap-4 items-end">
+                <div class="form-control w-full sm:w-auto">
+                    <label class="label">
+                        <span class="label-text">Search</span>
+                    </label>
+                    <input type="text" name="search" placeholder="Search..." value="{{ filter_search }}"
+                        class="input input-bordered w-full sm:w-64" />
+                </div>
+
+                <div class="form-control w-full sm:w-auto">
+                    <label class="label">
+                        <span class="label-text">Status</span>
+                    </label>
+                    <select name="status" class="select select-bordered">
+                        <option value="all" {% if filter_status=='all' %}selected{% endif %}>All</option>
+                        <option value="pending" {% if filter_status=='pending' %}selected{% endif %}>Pending</option>
+                        <option value="mapped" {% if filter_status=='mapped' %}selected{% endif %}>Mapped</option>
+                    </select>
+                </div>
+
+                <div class="form-control w-full sm:w-auto">
+                    <label class="label">
+                        <span class="label-text">Source</span>
+                    </label>
+                    <select name="source" class="select select-bordered">
+                        <option value="all">All Sources</option>
+                        {% for s in sources %}
+                        <option value="{{ s }}" {% if filter_source==s %}selected{% endif %}>{{ s }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="form-control w-full sm:w-auto">
+                    <label class="label">
+                        <span class="label-text">Type</span>
+                    </label>
+                    <select name="m_type" class="select select-bordered">
+                        <option value="all">All Types</option>
+                        {% for t in types %}
+                        <option value="{{ t }}" {% if filter_type==t %}selected{% endif %}>{{ t }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="form-control">
+                    <button type="submit" class="btn btn-primary">Apply Filters</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Mappings Table -->
+    <div class="overflow-x-auto bg-base-100 shadow-xl rounded-box">
+        <table class="table table-zebra w-full">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Source</th>
+                    <th>Type</th>
+                    <th>External Name</th>
+                    <th>External Key</th>
+                    <th>Internal Key</th>
+                    <th class="text-center">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for mapping in mappings %}
+                <tr class="hover" id="mapping-row-{{ mapping.id }}">
+                    <td>{{ mapping.id }}</td>
+                    <td>
+                        <div class="badge badge-ghost">{{ mapping.source }}</div>
+                    </td>
+                    <td>
+                        <div class="badge badge-outline">{{ mapping.type }}</div>
+                    </td>
+                    <td class="font-medium">{{ mapping.external_name or '-' }}</td>
+                    <td class="font-mono text-sm" id="ext-key-cell-{{ mapping.id }}">{{ mapping.external_key }}</td>
+                    <td id="int-key-cell-{{ mapping.id }}">
+                        <span id="int-key-span-{{ mapping.id }}"
+                            class="{% if mapping.internal_key == 'PENDING' %}badge badge-warning{% else %}font-mono text-sm{% endif %}">
+                            {{ mapping.internal_key }}
+                        </span>
+                    </td>
+                    <td class="text-center">
+                        <button class="btn btn-sm btn-ghost btn-circle" onclick='openEditModal({{ mapping|tojson }})'>
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+                                stroke="currentColor" class="w-5 h-5">
+                                <path stroke-linecap="round" stroke-linejoin="round"
+                                    d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+                            </svg>
+                        </button>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="7" class="text-center py-8 opacity-50">No mappings found matching filters.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Edit Modal -->
+<dialog id="edit_modal" class="modal">
+    <div class="modal-box w-11/12 max-w-2xl">
+        <h3 class="font-bold text-lg mb-4">Edit Mapping</h3>
+
+        <form id="edit_form" method="dialog" onsubmit="event.preventDefault(); saveMapping();">
+            <input type="hidden" id="mapping_id" />
+
+            <!-- Read-only Info -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 p-4 bg-base-200 rounded-lg">
+                <div class="form-control">
+                    <label class="label"><span class="label-text font-semibold">ID</span></label>
+                    <div class="text-sm" id="display_id"></div>
+                </div>
+                <div class="form-control">
+                    <label class="label"><span class="label-text font-semibold">Source</span></label>
+                    <div class="text-sm" id="display_source"></div>
+                </div>
+                <div class="form-control">
+                    <label class="label"><span class="label-text font-semibold">Type</span></label>
+                    <div class="text-sm" id="display_type"></div>
+                </div>
+                <div class="form-control">
+                    <label class="label"><span class="label-text font-semibold">External Name</span></label>
+                    <div class="text-sm font-medium" id="display_external_name"></div>
+                </div>
+            </div>
+
+            <!-- Editable Fields -->
+            <div class="grid grid-cols-1 gap-4">
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text font-semibold">External Key</span>
+                    </label>
+                    <input type="text" id="field_external_key" class="input input-bordered" />
+                </div>
+
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text font-semibold">Internal Key</span>
+                    </label>
+                    <input type="text" id="field_internal_key" class="input input-bordered" />
+                    <label class="label">
+                        <span class="label-text-alt">Set to a valid league/team key or leave as PENDING</span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="modal-action">
+                <button type="button" class="btn"
+                    onclick="document.getElementById('edit_modal').close()">Cancel</button>
+                <button type="submit" class="btn btn-primary">Save</button>
+            </div>
+        </form>
+    </div>
+</dialog>
+
+<script>
+    let currentMappingId = null;
+
+    function openEditModal(mapping) {
+        currentMappingId = mapping.id;
+        document.getElementById('mapping_id').value = mapping.id;
+
+        // Display read-only fields
+        document.getElementById('display_id').textContent = mapping.id;
+        document.getElementById('display_source').textContent = mapping.source;
+        document.getElementById('display_type').textContent = mapping.type;
+        document.getElementById('display_external_name').textContent = mapping.external_name || '-';
+
+        // Populate editable fields
+        document.getElementById('field_external_key').value = mapping.external_key;
+        document.getElementById('field_internal_key').value = mapping.internal_key;
+
+        document.getElementById('edit_modal').showModal();
+    }
+
+    async function saveMapping() {
+        const extKey = document.getElementById('field_external_key').value;
+        const intKey = document.getElementById('field_internal_key').value;
+
+        try {
+            const response = await fetch(`/mappings/${currentMappingId}/update`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    external_key: extKey,
+                    internal_key: intKey
+                })
+            });
+
+            if (response.ok) {
+                // Update the DOM directly
+                const extKeyCell = document.getElementById(`ext-key-cell-${currentMappingId}`);
+                const intKeySpan = document.getElementById(`int-key-span-${currentMappingId}`);
+
+                if (extKeyCell) {
+                    extKeyCell.textContent = extKey;
+                }
+
+                if (intKeySpan) {
+                    intKeySpan.textContent = intKey;
+                    // Update styling based on PENDING status
+                    if (intKey === 'PENDING') {
+                        intKeySpan.className = 'badge badge-warning';
+                    } else {
+                        intKeySpan.className = 'font-mono text-sm';
+                    }
+                }
+
+                showToast('Mapping saved!', 'success');
+                document.getElementById('edit_modal').close();
+            } else {
+                showToast('Failed to update mapping', 'error');
+            }
+        } catch (e) {
+            console.error(e);
+            showToast('Error updating mapping', 'error');
+        }
+    }
+</script>
+{% endblock %}

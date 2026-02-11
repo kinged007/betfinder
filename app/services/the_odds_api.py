@@ -16,7 +16,19 @@ class TheOddsAPIClient:
         params["apiKey"] = self.api_key
         async with httpx.AsyncClient() as client:
             response = await client.get(f"{self.BASE_URL}{endpoint}", params=params)
-            response.raise_for_status()
+            if response.status_code >= 400:
+                try:
+                    error_data = response.json()
+                    message = error_data.get("message", response.text)
+                    # Helper to get other details if available
+                    if "details" in error_data:
+                         message += f" (Details: {error_data['details']})"
+                except Exception:
+                    message = response.text
+                
+                logger.error(f"TheOddsAPI Error {response.status_code}: {message}")
+                raise Exception(f"TheOddsAPI Error {response.status_code}: {message}")
+                
             return response.json()
 
     async def get_sports(self) -> List[Dict[str, Any]]:

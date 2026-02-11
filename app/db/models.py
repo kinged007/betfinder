@@ -197,6 +197,7 @@ class Mapping(Base, TimestampMixin):
     type: Mapped[str] = mapped_column(String) # 'team', 'league', 'market'
     external_key: Mapped[str] = mapped_column(String) # The value from the external source
     internal_key: Mapped[str] = mapped_column(String) # The value in our system (The-Odds-API standard)
+    external_name: Mapped[Optional[str]] = mapped_column(String, nullable=True) # Human-readable name from source (e.g. "Copa Libertadores")
     
     __table_args__ = (
         Index('ix_mapping_source_type_external', 'source', 'type', 'external_key', unique=True),

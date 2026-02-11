@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 scheduler = AsyncIOScheduler(timezone=timezone.utc)
 
 async def job_heartbeat():
-    logger.info(f"Scheduler Heartbeat: {datetime.now(timezone.utc)}")
+    logger.debug(f"Scheduler Heartbeat: {datetime.now(timezone.utc)}")
 
 async def job_fetch_sports():
     async with AsyncSessionLocal() as db:

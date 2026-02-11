@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="w-full md:max-w-7xl px-0 md:px-4">
+    <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6 px-4 md:px-0">
+        <h2 class="text-xl md:text-2xl font-bold">Active Leagues</h2>
+    </div>
+
+    <!-- Filters Section -->
+    <div class="card bg-base-100 shadow-xl mb-6">
+        <div class="card-body p-4">
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-2 md:gap-4 items-end">
+                <!-- Sports Filter -->
+                <div class="form-control w-full">
+                    <label class="label py-1"><span class="label-text text-xs">Sports</span></label>
+                    <div class="dropdown w-full" id="sport-dropdown">
+                        <label tabindex="0" class="btn btn-sm btn-outline w-full justify-between h-8 min-h-0">
+                            <span id="sport-label" class="truncate">Selected: 0</span>
+                            <svg class="w-3 h-3 ml-1 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M19 9l-7 7-7-7"></path>
+                            </svg>
+                        </label>
+                        <ul tabindex="0"
+                            class="dropdown-content z-[20] menu p-2 shadow bg-base-100 rounded-box w-48 max-h-60 overflow-y-scroll overscroll-contain">
+                            {% for sport in sports %}
+                            <li>
+                                <label class="label cursor-pointer justify-start gap-2 p-1">
+                                    <input type="checkbox" class="checkbox checkbox-xs sport-checkbox"
+                                        value="{{ sport.key }}" onchange="updateFilters()">
+                                    <span class="label-text text-xs">{{ sport.title }}</span>
+                                </label>
+                            </li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Leagues Filter -->
+                <div class="form-control w-full">
+                    <label class="label py-1"><span class="label-text text-xs">Leagues</span></label>
+                    <div class="dropdown w-full" id="league-dropdown">
+                        <label tabindex="0" class="btn btn-sm btn-outline w-full justify-between h-8 min-h-0">
+                            <span id="league-label" class="truncate">Selected: 0</span>
+                            <svg class="w-3 h-3 ml-1 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M19 9l-7 7-7-7"></path>
+                            </svg>
+                        </label>
+                        <ul tabindex="0"
+                            class="dropdown-content z-[20] menu p-2 shadow bg-base-100 rounded-box w-48 max-h-60 overflow-y-scroll overscroll-contain"
+                            id="league-list">
+                            {% for league in leagues %}
+                            <li data-sport="{{ league.sport_key }}">
+                                <label class="label cursor-pointer justify-start gap-2 p-1">
+                                    <input type="checkbox" class="checkbox checkbox-xs league-checkbox"
+                                        value="{{ league.key }}" onchange="updateFilters()">
+                                    <span class="label-text text-xs truncate">{{ league.title }}</span>
+                                </label>
+                            </li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Table Section -->
+    <div class="card bg-base-100 shadow-xl md:rounded-xl rounded-none">
+        <div class="card-body p-0 md:p-1 overflow-visible">
+            <table class="table w-full" id="leagues-table">
+                <thead>
+                    <tr class="bg-base-200 text-[10px] md:text-sm">
+                        <th class="px-2 md:px-4">League Name</th>
+                        <th class="px-2 md:px-4">Key</th>
+                        <th class="px-2 md:px-4">Group</th>
+                        <th class="px-2 md:px-4 text-center">Active</th>
+                    </tr>
+                </thead>
+                <tbody id="leagues-body">
+                    {% for group in grouped_leagues %}
+                    <!-- Sport Header Row -->
+                    <tr class="bg-base-300 font-bold sport-header" data-sport="{{ group.sport.key }}">
+                        <td colspan="4" class="px-2 md:px-4 py-2">
+                            <div class="flex items-center gap-2">
+                                <span class="text-sm uppercase tracking-wider">{{ group.sport.title }}</span>
+                                <span class="badge badge-sm badge-neutral">{{ group.leagues|length }}</span>
+                            </div>
+                        </td>
+                    </tr>
+                    <!-- League Rows -->
+                    {% for league in group.leagues %}
+                    <tr class="hover:bg-base-200 transition-colors border-b border-base-200 league-row"
+                        data-sport="{{ group.sport.key }}" data-league="{{ league.key }}">
+                        <td class="font-bold text-sm px-2 md:px-4">{{ league.title }}</td>
+                        <td class="font-mono text-xs opacity-60 px-2 md:px-4">{{ league.key }}</td>
+                        <td class="text-xs opacity-70 px-2 md:px-4">{{ league.group }}</td>
+                        <td class="text-center px-2 md:px-4">
+                            {% if league.active %}
+                            <span class="badge badge-success badge-xs">Active</span>
+                            {% else %}
+                            <span class="badge badge-ghost badge-xs">Inactive</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+    function updateFilters() {
+        updateFilterLabels();
+
+        // Get selected values
+        const selectedSports = Array.from(document.querySelectorAll('.sport-checkbox:checked')).map(cb => cb.value);
+        const selectedLeagues = Array.from(document.querySelectorAll('.league-checkbox:checked')).map(cb => cb.value);
+
+        // Filter Rows
+        const sportHeaders = document.querySelectorAll('.sport-header');
+        const leagueRows = document.querySelectorAll('.league-row');
+
+        // 1. Process Leagues
+        leagueRows.forEach(row => {
+            const sportKey = row.getAttribute('data-sport');
+            const leagueKey = row.getAttribute('data-league');
+
+            let show = true;
+
+            // Sport Filter
+            if (selectedSports.length > 0 && !selectedSports.includes(sportKey)) {
+                show = false;
+            }
+
+            // League Filter
+            if (selectedLeagues.length > 0 && !selectedLeagues.includes(leagueKey)) {
+                show = false;
+            }
+
+            row.style.display = show ? '' : 'none';
+        });
+
+        // 2. Process Sport Headers (Hide if all children are hidden)
+        // This is a bit tricky with simple DOM. We can just hide headers if Sport Filter excludes them.
+        // Or strictly check if any visible league exists for that sport.
+
+        // Simplified approach: Hide header if sport not selected (and filter active)
+        sportHeaders.forEach(header => {
+            const sportKey = header.getAttribute('data-sport');
+            let showHeader = true;
+
+            if (selectedSports.length > 0 && !selectedSports.includes(sportKey)) {
+                showHeader = false;
+            }
+
+            // Advanced: check if any league for this sport is visible?
+            // Let's do it for better UX (if I filter by League but not Sport, I want to see only relevant headers)
+            if (showHeader) {
+                // Check if any visible row has this sport key
+                const visibleSibling = document.querySelector(`.league-row[data-sport="${sportKey}"]:not([style*="display: none"])`);
+                if (!visibleSibling) {
+                    showHeader = false;
+                }
+            }
+
+            header.style.display = showHeader ? '' : 'none';
+        });
+    }
+
+    function updateFilterLabels() {
+        const sports = document.querySelectorAll('.sport-checkbox:checked');
+        const leagues = document.querySelectorAll('.league-checkbox:checked');
+
+        document.getElementById('sport-label').textContent = `Selected: ${sports.length}`;
+        document.getElementById('league-label').textContent = `Selected: ${leagues.length}`;
+
+        // Filter leagues list based on selected sports
+        const selectedSportKeys = Array.from(sports).map(cb => cb.value);
+        const leagueItems = document.querySelectorAll('#league-list li');
+
+        leagueItems.forEach(item => {
+            const sportKey = item.getAttribute('data-sport');
+            if (selectedSportKeys.length === 0 || selectedSportKeys.includes(sportKey)) {
+                item.style.display = '';
+            } else {
+                item.style.display = 'none';
+            }
+        });
+    }
+</script>
+{% endblock %}

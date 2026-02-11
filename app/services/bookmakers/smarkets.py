@@ -256,7 +256,7 @@ class SmarketsBookmaker(APIBookmaker):
         
         return results
 
-    async def _find_event_sid(self, sport_key: str, home: str, away: str, start_time: datetime, log=None) -> Optional[str]:
+    async def _find_event_sid(self, league_key: str, home: str, away: str, start_time: datetime, log=None) -> Optional[str]:
         """Search Smarkets for an event matching team names and start time."""
         from difflib import SequenceMatcher
         
@@ -321,9 +321,10 @@ class SmarketsBookmaker(APIBookmaker):
             "account_id": account.get("account_id")
         }
 
+    # TODO SPK: sport_key should be league_key for all bookmakers. BK will use mapping to get their league id to find odds
     async def obtain_odds(
         self, 
-        sport_key: str, 
+        league_key: str, 
         event_ids: List[str], 
         log: Optional[Any] = None
     ) -> List[Dict[str, Any]]:
@@ -372,7 +373,7 @@ class SmarketsBookmaker(APIBookmaker):
                         # Discovery: Fuzzy match event if missing sid/mkt/ev_sid
                         _log(f"Odd {odd.id} missing all Smarkets IDs. Searching...")
                         discovered_ev_sid = await self._find_event_sid(
-                            sport_key, 
+                            league_key, 
                             odd.market.event.home_team, 
                             odd.market.event.away_team, 
                             odd.market.event.commence_time,
@@ -602,8 +603,9 @@ class SmarketsBookmaker(APIBookmaker):
                         break
 
             if not market_sid or not contract_id:
+                # TODO SPK: sport_key should be league_key for all bookmakers. BK will use mapping to get their league id to find odds
                 odds = await self.obtain_odds(
-                    bet.event_data.get("sport_key"), 
+                    bet.event_data.get("league_key"), 
                     [bet.event_data.get("id")], 
                     log=print
                 )

@@ -2,11 +2,72 @@
 import httpx
 import asyncio
 import time
+import difflib
+import re
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta, timezone
+from sqlalchemy import select
 from app.domain.interfaces import AbstractBookmaker
 from app.core.enums import BetResult, BetStatus
-from app.db.models import Bet
+from app.db.models import Bet, Mapping, League
+
+# --- Fuzzy Matching Helpers ---
+
+COUNTRY_SYNONYMS = {
+    "dutch": "netherlands",
+    "french": "france",
+    "german": "germany",
+    "spanish": "spain",
+    "italian": "italy",
+    "english": "england",
+    "portuguese": "portugal",
+    "brazilian": "brazil",
+    "russian": "russia",
+    "belgian": "belgium",
+    "american": "usa",
+}
+
+def tokenize(s: str) -> List[str]:
+    return [t for t in re.split(r'[^a-zA-Z0-9]+', s.lower()) if t]
+
+def normalize_title(s: str) -> str:
+    tokens = tokenize(s)
+    normalized = []
+    for t in tokens:
+        normalized.append(COUNTRY_SYNONYMS.get(t, t))
+    return " ".join(normalized)
+
+def simple_ratio(s1: str, s2: str) -> float:
+    return difflib.SequenceMatcher(None, s1.lower(), s2.lower()).ratio()
+
+def token_sort_ratio(s1: str, s2: str) -> float:
+    s1 = normalize_title(s1)
+    s2 = normalize_title(s2)
+    t1 = tokenize(s1)
+    t2 = tokenize(s2)
+    t1.sort()
+    t2.sort()
+    return difflib.SequenceMatcher(None, " ".join(t1), " ".join(t2)).ratio()
+
+def token_set_ratio(s1: str, s2: str) -> float:
+    s1 = normalize_title(s1)
+    s2 = normalize_title(s2)
+    t1 = set(tokenize(s1))
+    t2 = set(tokenize(s2))
+    
+    intersection = t1.intersection(t2)
+    if not intersection: return 0.0
+    
+    sorted_inter = " ".join(sorted(list(intersection)))
+    sorted_t1 = " ".join(sorted(list(t1)))
+    sorted_t2 = " ".join(sorted(list(t2)))
+    
+    vals = [
+        difflib.SequenceMatcher(None, sorted_inter, sorted_t1).ratio(),
+        difflib.SequenceMatcher(None, sorted_inter, sorted_t2).ratio(),
+        difflib.SequenceMatcher(None, sorted_t1, sorted_t2).ratio()
+    ]
+    return max(vals)
 
 class SimpleBookmaker(AbstractBookmaker):
     name = "simple"
@@ -17,10 +78,42 @@ class SimpleBookmaker(AbstractBookmaker):
 
     async def obtain_odds(
         self, 
-        sport_key: str, 
+        league_key: str, 
         event_ids: List[str], 
-        log: Optional[Any] = None
+        log: Optional[Any] = None,
+        allowed_markets: Optional[List[str]] = None
     ) -> List[Dict[str, Any]]:
+        """
+        Fetch odds for specific events and return as a FLAT LIST of Dictionary objects.
+        Used by Trade Finder for live updates.
+        
+        Args:
+            league_key: Internal league key
+            event_ids: List of event IDs to fetch/update
+            log: Optional logger
+            allowed_markets: Optional list of market keys to filter
+            
+        Returns:
+            List[Dict]: Flat list of odds updates.
+        """
+        return []
+
+    async def fetch_league_odds(
+        self, 
+        league_key: str, 
+        allowed_markets: Optional[List[str]] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Fetch odds for a complete league and return in TheOddsAPI-compatible format (List of Events).
+        Used by Ingester for bulk sync of new events and full market refreshes.
+        
+        Args:
+            league_key: Internal league key
+            allowed_markets: Optional list of market keys to filter
+            
+        Returns:
+            List[Dict]: List of Event objects containing Bookmakers -> Markets -> Outcomes.
+        """
         return []
 
     async def place_bet(self, bet: Bet) -> Dict[str, Any]:
@@ -370,6 +463,167 @@ class APIBookmaker(SimpleBookmaker):
                 return float(payout)
         return bet.payout or 0.0
 
+    async def resolve_mapping(
+        self, 
+        mapping_type: str, 
+        external_id: str, 
+        external_name: str, 
+        group: str
+    ) -> Optional[str]:
+        """
+        Resolve an external ID to an internal key using the mapping table.
+        If no mapping exists, attempt fuzzy matching and create a new mapping.
+        
+        Args:
+            mapping_type: Type of mapping ('league', 'market', etc.)
+            external_id: External identifier from this bookmaker
+            external_name: Human-readable name from this bookmaker
+            group: Category/group for fuzzy matching (e.g., sport name)
+            
+        Returns:
+            Internal key if mapped/matched, None if PENDING
+        """
+        if not self.db:
+            # If no DB access, cannot resolve mappings
+            return None
+            
+        # Check for existing mapping
+        result = await self.db.execute(
+            select(Mapping).where(
+                Mapping.source == self.key,
+                Mapping.type == mapping_type,
+                Mapping.external_key == external_id
+            )
+        )
+        existing_mapping = result.scalar_one_or_none()
+        
+        if existing_mapping:
+            if existing_mapping.internal_key == "PENDING":
+                return None
+            return existing_mapping.internal_key
+        
+        # No mapping exists - attempt fuzzy match
+        if mapping_type == 'league':
+            return await self._fuzzy_match_league(external_id, external_name, group)
+        
+        # For other types, mark as PENDING for now
+        new_mapping = Mapping(
+            source=self.key,
+            type=mapping_type,
+            external_key=external_id,
+            internal_key="PENDING",
+            external_name=external_name
+        )
+        self.db.add(new_mapping)
+        await self.db.commit()
+        return None
+    
+    async def _fuzzy_match_league(
+        self, 
+        external_id: str, 
+        external_name: str, 
+        group: str
+    ) -> Optional[str]:
+        """
+        Attempt to fuzzy match a league name to an existing internal league.
+        """
+        # Fetch all leagues for this sport/group
+        result = await self.db.execute(
+            select(League).where(League.group == group)
+        )
+        candidates = result.scalars().all()
+        
+        if not candidates:
+            # No candidates - mark as PENDING
+            new_mapping = Mapping(
+                source=self.key,
+                type='league',
+                external_key=external_id,
+                internal_key="PENDING",
+                external_name=external_name
+            )
+            self.db.add(new_mapping)
+            await self.db.commit()
+            return None
+        
+        best_match = None
+        best_score = 0.0
+        
+        for cand in candidates:
+            # Skip leagues from this same bookmaker
+            if cand.key.startswith(f"{self.key}_"):
+                continue
+                
+            # Calculate scores
+            norm_source = normalize_title(external_name)
+            norm_cand = normalize_title(cand.title)
+            score_simple = difflib.SequenceMatcher(None, norm_source, norm_cand).ratio()
+            score_sort = token_sort_ratio(external_name, cand.title)
+            score_set = token_set_ratio(external_name, cand.title)
+            
+            # Prefer Simple/Sort, use Set only if Sort is decent
+            effective_set = score_set if score_sort > 0.6 else 0.0
+            current_best = max(score_simple, score_sort, effective_set)
+            
+            if current_best > best_score:
+                best_score = current_best
+                best_match = cand
+        
+        if best_score > 0.85 and best_match:
+            # High confidence - auto-map
+            new_mapping = Mapping(
+                source=self.key,
+                type='league',
+                external_key=external_id,
+                internal_key=best_match.key,
+                external_name=external_name
+            )
+            self.db.add(new_mapping)
+            await self.db.commit()
+            print(f"[{self.key}] Auto-mapped '{external_name}' to '{best_match.title}' ({best_match.key}). Score: {best_score:.2f}")
+            return best_match.key
+        else:
+            # Low confidence - mark as PENDING
+            new_mapping = Mapping(
+                source=self.key,
+                type='league',
+                external_key=external_id,
+                internal_key="PENDING",
+                external_name=external_name
+            )
+            self.db.add(new_mapping)
+            await self.db.commit()
+            print(f"[{self.key}] New unmapped league: '{external_name}' (ID: {external_id}). Marked PENDING.")
+            return None
+    
+    async def get_external_id(
+        self, 
+        mapping_type: str, 
+        internal_key: str
+    ) -> Optional[str]:
+        """
+        Reverse lookup: Get external ID for a given internal key.
+        
+        Args:
+            mapping_type: Type of mapping ('league', 'market', etc.)
+            internal_key: Internal identifier
+            
+        Returns:
+            External ID if mapping exists, None otherwise
+        """
+        if not self.db:
+            return None
+            
+        result = await self.db.execute(
+            select(Mapping).where(
+                Mapping.source == self.key,
+                Mapping.type == mapping_type,
+                Mapping.internal_key == internal_key
+            )
+        )
+        mapping = result.scalar_one_or_none()
+        return mapping.external_key if mapping else None
+
 class BookmakerFactory:
     _registry = {}
     _instances: Dict[str, AbstractBookmaker] = {}
@@ -397,7 +651,8 @@ class BookmakerFactory:
 
     @classmethod
     def get_registered_keys(cls) -> List[str]:
-        return [k for k, v in cls._registry.items() if v != SimpleBookmaker and k != "simple"]
+        keys = [k for k, v in cls._registry.items() if v != SimpleBookmaker and k != "simple"]
+        return keys
 
     @classmethod
     def get_all_schemas(cls) -> Dict[str, List[Dict[str, Any]]]:
@@ -405,3 +660,22 @@ class BookmakerFactory:
 
 # Register SimpleBookmaker (default is handled in get_bookmaker logic, but we can register explicitly)
 BookmakerFactory.register("simple", SimpleBookmaker)
+
+# Lazy import to avoid circular dep if needed, or just import here
+try:
+    from app.services.bookmakers.coral import CoralBookmaker
+    BookmakerFactory.register("coral", CoralBookmaker)
+except ImportError:
+    pass
+
+try:
+    from app.services.bookmakers.smarkets import SmarketsBookmaker
+    BookmakerFactory.register("smarkets", SmarketsBookmaker)
+except ImportError:
+    pass
+
+try:
+    from app.services.bookmakers.sx_bet import SXBetBookmaker
+    BookmakerFactory.register("sx_bet", SXBetBookmaker)
+except ImportError:
+    pass

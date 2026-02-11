@@ -2,9 +2,9 @@ from fastapi import APIRouter, Request, Depends, HTTPException, Form
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, case, func
+from sqlalchemy import select, case, func, or_
 from app.api.deps import get_db
-from app.db.models import Bet, Bookmaker, Event, Market, Preset, Sport, League
+from app.db.models import Bet, Bookmaker, Event, Market, Preset, Sport, League, Mapping
 from app.domain import schemas
 from app.core.config import settings
 from app.core.enums import BetResult, BetStatus
@@ -102,6 +102,54 @@ async def presets_view(request: Request, db: AsyncSession = Depends(get_db)):
             "bookmakers": bookmakers,
             "leagues": leagues,
             "other_config_schema": PRESET_OTHER_CONFIG_SCHEMA,
+            "is_dev": settings.is_dev,
+        }
+    )
+
+@router.get("/active-leagues")
+async def active_leagues_view(request: Request, db: AsyncSession = Depends(get_db)):
+    # Fetch active sports
+    s_res = await db.execute(select(Sport).where(Sport.active == True).order_by(Sport.title))
+    sports = s_res.scalars().all()
+
+    # Fetch active leagues
+    l_res = await db.execute(select(League).where(League.active == True).order_by(League.title))
+    leagues = l_res.scalars().all()
+
+    # Group in Python
+    leagues_by_sport = {}
+    for l in leagues:
+        if l.sport_key not in leagues_by_sport:
+            leagues_by_sport[l.sport_key] = []
+        leagues_by_sport[l.sport_key].append(l)
+
+    # Structure data: List of {sport: Sport, leagues: [League]}
+    grouped_leagues = []
+    
+    # Iterate sports to keep sorted order
+    for sport in sports:
+        s_leagues = leagues_by_sport.get(sport.key, [])
+        if s_leagues:
+            grouped_leagues.append({
+                "sport": sport,
+                "leagues": s_leagues
+            })
+
+    # Presets for Navbar
+    p_res = await db.execute(select(Preset).where(Preset.active == True))
+    presets = p_res.scalars().all()
+
+    return templates.TemplateResponse(
+        "active_leagues.html",
+        {
+            "request": request,
+            "title": "Active Leagues",
+            "active": "active_leagues",
+            "sports": sports,
+            # "bookmakers": bookmakers, # Removed as per user request
+            "leagues": leagues, # For dropdown
+            "grouped_leagues": grouped_leagues, # For table
+            "presets": presets,
             "is_dev": settings.is_dev,
         }
     )
@@ -407,4 +455,111 @@ async def bets_partial_view(
             "timedelta": timedelta,
         }
     )
+
+@router.get("/mappings")
+async def mappings_view(
+    request: Request,
+    status: str = "pending", # Default to pending as that's the primary use case
+    source: str = "all",
+    m_type: str = "all",
+    search: str = "",
+    page: int = 1,
+    db: AsyncSession = Depends(get_db)
+):
+    # 1. Base Query
+    query = select(Mapping)
+    
+    # 2. Filters
+    if status == "pending":
+        query = query.where(Mapping.internal_key == "PENDING")
+    elif status == "mapped":
+         query = query.where(Mapping.internal_key != "PENDING")
+    
+    if source != "all":
+        query = query.where(Mapping.source == source)
+    
+    if m_type != "all":
+        query = query.where(Mapping.type == m_type)
+        
+    if search:
+        search_term = f"%{search}%"
+        query = query.where(
+            or_(
+                Mapping.external_name.ilike(search_term),
+                Mapping.external_key.ilike(search_term),
+                Mapping.internal_key.ilike(search_term)
+            )
+        )
+    
+    # 3. Pagination & Sorting
+    query = query.order_by(Mapping.source, Mapping.type, Mapping.external_name)
+    
+    # Execute
+    result = await db.execute(query)
+    mappings_models = result.scalars().all()
+    
+    # Convert to dicts for JSON serialization in template
+    mappings = [
+        {
+            "id": m.id,
+            "source": m.source,
+            "type": m.type,
+            "external_key": m.external_key,
+            "internal_key": m.internal_key,
+            "external_name": m.external_name
+        }
+        for m in mappings_models
+    ]
+    
+    # Filter options
+    sources_res = await db.execute(select(Mapping.source).distinct())
+    sources = sources_res.scalars().all()
+    
+    types_res = await db.execute(select(Mapping.type).distinct())
+    types = types_res.scalars().all()
+    
+    # Fetch presets for navbar
+    result_p = await db.execute(select(Preset).where(Preset.active == True))
+    presets = result_p.scalars().all()
+    
+    return templates.TemplateResponse(
+        "mappings.html",
+        {
+            "request": request,
+            "title": "Mappings",
+            "active": "mappings",
+            "mappings": mappings,
+            "filter_status": status,
+            "filter_source": source,
+            "filter_type": m_type,
+            "filter_search": search,
+            "sources": sources,
+            "types": types,
+            "presets": presets,
+            "is_dev": settings.is_dev,
+        }
+    )
+
+class MappingUpdateParams(BaseModel):
+    internal_key: str
+    external_key: str
+
+@router.post("/mappings/{mapping_id}/update")
+async def update_mapping(
+    mapping_id: int,
+    params: MappingUpdateParams,
+    db: AsyncSession = Depends(get_db)
+):
+    mapping = await db.get(Mapping, mapping_id)
+    if not mapping:
+        raise HTTPException(status_code=404, detail="Mapping not found")
+    
+    mapping.internal_key = params.internal_key
+    mapping.external_key = params.external_key
+    
+    db.add(mapping)
+    await db.commit()
+    await db.refresh(mapping)
+    
+    return {"status": "success", "internal_key": mapping.internal_key, "external_key": mapping.external_key}
 
