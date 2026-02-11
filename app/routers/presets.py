@@ -69,7 +69,7 @@ async def update_preset(
     update_data = preset_in.model_dump(exclude_unset=True)
     
     # Only reset sync time if fields affecting the sync are modified AND changed
-    sync_reset_fields = ["sports", "leagues", "bookmakers", "markets"]
+    sync_reset_fields = ["sports", "leagues", "show_popular_leagues"] # "markets",
     has_changes = False
     for field in sync_reset_fields:
         if field in update_data:

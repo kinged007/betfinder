@@ -673,22 +673,3 @@ class BookmakerFactory:
 
 # Register SimpleBookmaker (default is handled in get_bookmaker logic, but we can register explicitly)
 BookmakerFactory.register("simple", SimpleBookmaker)
-
-# Lazy import to avoid circular dep if needed, or just import here
-try:
-    from app.services.bookmakers.coral import CoralBookmaker
-    BookmakerFactory.register("coral", CoralBookmaker)
-except ImportError:
-    pass
-
-try:
-    from app.services.bookmakers.smarkets import SmarketsBookmaker
-    BookmakerFactory.register("smarkets", SmarketsBookmaker)
-except ImportError:
-    pass
-
-try:
-    from app.services.bookmakers.sx_bet import SXBetBookmaker
-    BookmakerFactory.register("sx_bet", SXBetBookmaker)
-except ImportError:
-    pass
