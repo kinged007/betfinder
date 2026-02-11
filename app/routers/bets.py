@@ -3,6 +3,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from app.api.deps import get_db
 from app.core.security import get_api_key
 from app.db.models import Bet, Bookmaker, Event, Market, Odds

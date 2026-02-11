@@ -10,7 +10,7 @@ PRESET_OTHER_CONFIG_SCHEMA: List[Dict[str, Any]] = [
             {"value": "edge", "label": "Edge"},
             {"value": "start_time", "label": "Start Time"},
             {"value": "price", "label": "Odds"},
-            {"value": "true_odds", "label": "True Probability"},
+            {"value": "implied_probability", "label": "Probability"},
             {"value": "home", "label": "Market/Event"}
         ],
         "default": "edge"

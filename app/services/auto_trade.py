@@ -159,7 +159,7 @@ class AutoTradeService:
             "edge": lambda o: o.edge,
             "start_time": lambda o: o.event.commence_time,
             "price": lambda o: o.odd.price,
-            "true_odds": lambda o: o.odd.true_odds,
+            "implied_probability": lambda o: o.odd.implied_probability,
             "home": lambda o: (o.event.home_team or "").lower(),
         }
         
