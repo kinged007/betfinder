@@ -101,6 +101,9 @@ class AutoTradeService:
                 logger.info(f"No opportunities found for preset {preset.name}")
                 break
             
+            # Sort opportunities according to preset's sort configuration
+            opportunities = AutoTradeService._sort_opportunities(opportunities, preset)
+            
             stats["opportunities_found"] = len(opportunities)
             logger.info(f"Found {len(opportunities)} opportunities for preset {preset.name}")
             
@@ -134,6 +137,50 @@ class AutoTradeService:
                 break
         
         return stats
+    
+    @staticmethod
+    def _sort_opportunities(
+        opportunities: List[TradeOpportunity],
+        preset: Preset
+    ) -> List[TradeOpportunity]:
+        """
+        Sort opportunities based on the preset's sort configuration.
+        
+        Reads sort_by and sort_order from preset.other_config.
+        Defaults to edge descending if not configured.
+        """
+        config = preset.other_config or {}
+        sort_by = config.get("sort_by", "edge")
+        sort_order = config.get("sort_order", "desc")
+        reverse = sort_order != "asc"
+        
+        # Map sort_by values to accessor functions
+        sort_key_map = {
+            "edge": lambda o: o.edge,
+            "start_time": lambda o: o.event.commence_time,
+            "price": lambda o: o.odd.price,
+            "true_odds": lambda o: o.odd.true_odds,
+            "home": lambda o: (o.event.home_team or "").lower(),
+        }
+        
+        key_fn = sort_key_map.get(sort_by, sort_key_map["edge"])
+        
+        # Wrap key function to handle None values (push them to the end)
+        def safe_key(o):
+            val = key_fn(o)
+            if val is None:
+                # Use a sentinel that sorts after everything regardless of direction
+                return (1, 0)  # (is_none=True, value=0)
+            return (0, val)    # (is_none=False, actual_value)
+        
+        sorted_opps = sorted(opportunities, key=safe_key, reverse=reverse)
+        
+        logger.debug(
+            f"Sorted {len(opportunities)} opportunities by '{sort_by}' "
+            f"({'descending' if reverse else 'ascending'})"
+        )
+        
+        return sorted_opps
     
     @staticmethod
     async def _place_bet_for_opportunity(

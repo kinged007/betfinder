@@ -5,7 +5,7 @@ from app.services.ingester import DataIngester
 from app.services.the_odds_api import TheOddsAPIClient
 from app.services.standardizer import DataStandardizer
 from app.repositories.mapping import MappingRepository
-from app.db.models import Preset, PresetHiddenItem, Bet, Bookmaker, Event, Odds, Market
+from app.db.models import Preset, PresetHiddenItem, Bet, Bookmaker, Event, Odds, Market, League
 from sqlalchemy import select, delete, update, and_, or_
 from datetime import datetime, timezone, timedelta
 from app.core.config import settings
