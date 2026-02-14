@@ -21,8 +21,13 @@ router = APIRouter(dependencies=[Depends(check_session)])
 
 @router.get("/")
 async def dashboard_view(request: Request, db: AsyncSession = Depends(get_db)):
+    # Fetch active presets
     result = await db.execute(select(Preset).where(Preset.active == True))
     presets = result.scalars().all()
+    
+    # Auto-select first active preset for trade feed widget
+    first_preset = presets[0] if presets else None
+    
     return templates.TemplateResponse(
         "dashboard.html",
         {
@@ -30,6 +35,7 @@ async def dashboard_view(request: Request, db: AsyncSession = Depends(get_db)):
             "title": "Dashboard",
             "active": "dashboard",
             "presets": presets,
+            "first_preset": first_preset,
             "is_dev": settings.is_dev,
         }
     )
@@ -37,6 +43,124 @@ async def dashboard_view(request: Request, db: AsyncSession = Depends(get_db)):
 @router.get("/dashboard")
 async def dashboard_redirect():
     return RedirectResponse(url="/")
+
+
+@router.get("/api/dashboard/bet-stats")
+async def get_dashboard_bet_stats(db: AsyncSession = Depends(get_db)):
+    """Get summary statistics for the bet stats widget"""
+    from datetime import timedelta
+    
+    # Query settled bets
+    query = select(Bet).where(
+        Bet.status.in_(['won', 'lost', 'void'])
+    )
+    
+    result = await db.execute(query)
+    bets = result.scalars().all()
+    
+    # Calculate stats
+    total_bets = len(bets)
+    total_staked = 0.0
+    total_profit = 0.0
+    wins = 0
+    losses = 0
+    
+    for bet in bets:
+        total_staked += bet.stake
+        if bet.status == 'won':
+            if bet.payout is not None:
+                pnl = bet.payout - bet.stake
+            else:
+                pnl = (bet.stake * bet.price) - bet.stake
+            total_profit += pnl
+            wins += 1
+        elif bet.status == 'lost':
+            total_profit -= bet.stake
+            losses += 1
+    
+    roi = (total_profit / total_staked * 100) if total_staked > 0 else 0.0
+    win_rate = (wins / (wins + losses) * 100) if (wins + losses) > 0 else 0.0
+    
+    # Build chart data (last 30 days)
+    from collections import defaultdict
+    daily_pnl = defaultdict(float)
+    
+    for bet in bets:
+        pnl = 0.0
+        if bet.status == 'won':
+            if bet.payout is not None:
+                pnl = bet.payout - bet.stake
+            else:
+                pnl = (bet.stake * bet.price) - bet.stake
+        elif bet.status == 'lost':
+            pnl = -bet.stake
+        
+        ts = bet.settled_at if bet.settled_at else bet.placed_at
+        date_str = ts.strftime('%Y-%m-%d')
+        daily_pnl[date_str] += pnl
+    
+    # Build chart data
+    sorted_dates = sorted(daily_pnl.keys())
+    cumulative_balance = 0.0
+    chart_data = []
+    
+    for date_str in sorted_dates:
+        day_pnl = daily_pnl[date_str]
+        cumulative_balance += day_pnl
+        chart_data.append({
+            'x': date_str,
+            'y': round(cumulative_balance, 2),
+            'pnl': round(day_pnl, 2)
+        })
+    
+    return {
+        "total_bets": total_bets,
+        "roi": round(roi, 1),
+        "win_rate": round(win_rate, 1),
+        "total_profit": round(total_profit, 2),
+        "chart_data": chart_data
+    }
+
+
+@router.get("/api/dashboard/upcoming-fixtures")
+async def get_dashboard_upcoming_fixtures(db: AsyncSession = Depends(get_db)):
+    """Get next 5 upcoming fixtures including live matches"""
+    from datetime import timedelta
+    from sqlalchemy.orm import selectinload
+    
+    # Get events from 2 hours ago (for live matches) to future
+    cutoff_time = datetime.now(timezone.utc) - timedelta(hours=2)
+    
+    query = (
+        select(Event)
+        .options(selectinload(Event.league))
+        .where(
+            Event.active == True,
+            Event.commence_time >= cutoff_time
+        )
+        .order_by(Event.commence_time.asc())
+        .limit(5)
+    )
+    
+    result = await db.execute(query)
+    events = result.scalars().all()
+    
+    fixtures = []
+    now = datetime.now(timezone.utc)
+    
+    for event in events:
+        is_live = event.commence_time <= now
+        fixtures.append({
+            "id": event.id,
+            "home_team": event.home_team,
+            "away_team": event.away_team,
+            "commence_time": event.commence_time.isoformat(),
+            "league_title": event.league.title if event.league else event.sport_key,
+            "sport_key": event.sport_key,
+            "is_live": is_live
+        })
+    
+    return fixtures
 
 
 @router.get("/trade-feed")

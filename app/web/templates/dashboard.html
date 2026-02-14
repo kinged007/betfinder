@@ -1,13 +1,457 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="hero bg-base-100 rounded-box shadow-xl p-10 max-w-4xl mx-auto">
-    <div class="hero-content text-center">
-        <div class="max-w-md">
-            <h1 class="text-5xl font-bold">Welcome</h1>
-            <p class="py-6">Sports Bet Finder Dashboard. Select "Trade Feed" from the sidebar to find betting
-                opportunities.</p>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+
+<style>
+    /* Flash animations for odds changes */
+    @keyframes flashGreen {
+        0% { background-color: rgba(34, 197, 94, 0.4); }
+        100% { background-color: transparent; }
+    }
+
+    @keyframes flashRed {
+        0% { background-color: rgba(239, 68, 68, 0.4); }
+        100% { background-color: transparent; }
+    }
+
+    .flash-increase { animation: flashGreen 1.5s ease-out; }
+    .flash-decrease { animation: flashRed 1.5s ease-out; }
+
+    .pulse-dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        display: inline-block;
+    }
+
+    .status-connected {
+        background-color: #22c55e;
+        box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7);
+        animation: pulse-green 2s infinite;
+    }
+
+    .status-disconnected {
+        background-color: #ef4444;
+        box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+    }
+
+    @keyframes pulse-green {
+        0% {
+            transform: scale(0.95);
+            box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7);
+        }
+        70% {
+            transform: scale(1);
+            box-shadow: 0 0 0 10px rgba(34, 197, 94, 0);
+        }
+        100% {
+            transform: scale(0.95);
+            box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
+        }
+    }
+
+    .widget-container {
+        max-width: 300px;
+    }
+
+    @media (max-width: 768px) {
+        .widget-container {
+            max-width: 100%;
+        }
+    }
+</style>
+
+<div class="w-full px-4 md:px-6 max-w-7xl mx-auto">
+    <div class="flex justify-between items-center mb-6">
+        <h2 class="text-2xl md:text-3xl font-bold">Dashboard</h2>
+    </div>
+
+    <!-- Widgets Grid: 3 columns on desktop, 1 on mobile -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+        
+        <!-- Widget 1: My Bet Stats -->
+        <div class="widget-container">
+            <div class="card bg-base-100 shadow-xl">
+                <div class="card-body p-4">
+                    <h3 class="card-title text-lg mb-3">My Bet Stats</h3>
+                    
+                    <div class="flex flex-col gap-2 mb-3">
+                        <div class="stat p-2 bg-base-200 rounded-lg">
+                            <div class="stat-title text-xs">Total Bets</div>
+                            <div class="stat-value text-xl" id="widget-total-bets">0</div>
+                        </div>
+                        <div class="stat p-2 bg-base-200 rounded-lg">
+                            <div class="stat-title text-xs">ROI</div>
+                            <div class="stat-value text-xl" id="widget-roi">0.0%</div>
+                        </div>
+                        <div class="stat p-2 bg-base-200 rounded-lg">
+                            <div class="stat-title text-xs">Win Rate</div>
+                            <div class="stat-value text-xl" id="widget-win-rate">0.0%</div>
+                        </div>
+                    </div>
+
+                    <div class="w-full h-[150px]">
+                        <canvas id="widgetBankrollChart"></canvas>
+                    </div>
+
+                    <div class="card-actions justify-end mt-2">
+                        <a href="/analytics" class="btn btn-sm btn-ghost">View Analytics →</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Widget 2: Next 5 Upcoming Fixtures -->
+        <div class="widget-container">
+            <div class="card bg-base-100 shadow-xl">
+                <div class="card-body p-4">
+                    <h3 class="card-title text-lg mb-3">Upcoming Fixtures</h3>
+                    
+                    <div id="fixtures-list" class="space-y-2">
+                        <div class="flex justify-center py-4">
+                            <span class="loading loading-spinner loading-md"></span>
+                        </div>
+                    </div>
+
+                    <div class="card-actions justify-end mt-2">
+                        <a href="/fixtures" class="btn btn-sm btn-ghost">View All →</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Widget 3: Preview placeholder for trade feed (shown on desktop only) -->
+        <div class="widget-container hidden md:block">
+            <div class="card bg-base-100 shadow-xl">
+                <div class="card-body p-4">
+                    <h3 class="card-title text-lg mb-3">Live Trade Feed</h3>
+                    <p class="text-sm opacity-70">Real-time betting opportunities below</p>
+                    <div class="flex items-center justify-center h-[200px] opacity-50">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                        </svg>
+                    </div>
+                    <div class="card-actions justify-end mt-2">
+                        <a href="/trade-feed" class="btn btn-sm btn-ghost">Open Trade Feed →</a>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
+
+    <!-- Full Width Trade Feed Widget -->
+    {% if first_preset %}
+    <div class="card bg-base-100 shadow-xl">
+        <div class="card-body p-4">
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
+                <div class="flex items-center gap-3">
+                    <div id="ws-indicator" class="pulse-dot status-disconnected tooltip tooltip-right cursor-help" data-tip="Connecting..."></div>
+                    <h3 class="text-xl font-bold">Trade Feed</h3>
+                </div>
+                
+                <!-- Preset Dropdown -->
+                <div class="dropdown dropdown-end">
+                    <label tabindex="0" class="btn btn-sm btn-outline">
+                        <span id="selected-preset-name">{{ first_preset.name }}</span>
+                        <svg class="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                        </svg>
+                    </label>
+                    <ul tabindex="0" class="dropdown-content z-[10] menu p-2 shadow bg-base-100 rounded-box w-52 max-h-60 overflow-y-auto">
+                        {% for preset in presets %}
+                        <li>
+                            <a onclick="changePreset({{ preset.id }}, '{{ preset.name }}')">{{ preset.name }}</a>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Trade Feed Table (scrollable, max height) -->
+            <div class="overflow-x-auto max-h-[500px] overflow-y-auto border border-base-300 rounded-lg">
+                <table class="table table-sm w-full" id="trade-table">
+                    <thead class="sticky top-0 bg-base-200 z-10">
+                        <tr class="text-xs">
+                            <th class="px-2">Time</th>
+                            <th class="px-2">Market</th>
+                            <th class="px-2 text-center">Odds</th>
+                            <th class="px-2 text-center">Edge</th>
+                            <th class="px-2 text-center">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="trade-feed-body">
+                        <tr>
+                            <td colspan="5" class="text-center py-10">
+                                <span class="loading loading-spinner loading-lg"></span>
+                                <div class="mt-2 text-gray-500">Waiting for data...</div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="mt-3 text-xs opacity-70 text-right">
+                <a href="/trade-feed?preset_id={{ first_preset.id }}" class="link">View Full Trade Feed →</a>
+            </div>
+        </div>
+    </div>
+    {% endif %}
 </div>
+
+<script>
+    let widgetChartInstance = null;
+    let currentPresetId = {{ first_preset.id if first_preset else 'null' }};
+    let websocket = null;
+    let reconnectTimeout = null;
+    let previousOdds = {}; // Track odds for flash animations
+
+    document.addEventListener('DOMContentLoaded', () => {
+        initWidgetChart();
+        loadBetStats();
+        loadUpcomingFixtures();
+        
+        if (currentPresetId) {
+            connectWebSocket(currentPresetId);
+        }
+    });
+
+    function initWidgetChart() {
+        const ctx = document.getElementById('widgetBankrollChart').getContext('2d');
+        widgetChartInstance = new Chart(ctx, {
+            type: 'line',
+            data: {
+                datasets: [{
+                    label: 'Bankroll',
+                    data: [],
+                    borderColor: '#22c55e',
+                    backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                    borderWidth: 2,
+                    pointRadius: 1,
+                    tension: 0.1,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: {
+                        type: 'time',
+                        time: {
+                            unit: 'day',
+                            tooltipFormat: 'PP'
+                        },
+                        grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                        ticks: { maxTicksLimit: 5 }
+                    },
+                    y: {
+                        grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                        ticks: { maxTicksLimit: 5 }
+                    }
+                },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return 'Balance: ' + context.parsed.y.toFixed(2);
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    async function loadBetStats() {
+        try {
+            const response = await fetch('/api/dashboard/bet-stats');
+            if (!response.ok) return;
+            
+            const data = await response.json();
+            
+            document.getElementById('widget-total-bets').textContent = data.total_bets;
+            
+            const roiEl = document.getElementById('widget-roi');
+            roiEl.textContent = data.roi.toFixed(1) + '%';
+            roiEl.classList.remove('text-success', 'text-error');
+            roiEl.classList.add(data.roi >= 0 ? 'text-success' : 'text-error');
+            
+            document.getElementById('widget-win-rate').textContent = data.win_rate.toFixed(1) + '%';
+            
+            if (widgetChartInstance) {
+                widgetChartInstance.data.datasets[0].data = data.chart_data;
+                widgetChartInstance.update();
+            }
+        } catch (e) {
+            console.error('Failed to load bet stats:', e);
+        }
+    }
+
+    async function loadUpcomingFixtures() {
+        try {
+            const response = await fetch('/api/dashboard/upcoming-fixtures');
+            if (!response.ok) return;
+            
+            const fixtures = await response.json();
+            const container = document.getElementById('fixtures-list');
+            
+            if (fixtures.length === 0) {
+                container.innerHTML = '<div class="text-center py-4 text-sm opacity-70">No upcoming fixtures</div>';
+                return;
+            }
+            
+            container.innerHTML = fixtures.map(fixture => {
+                const date = new Date(fixture.commence_time);
+                const isLive = fixture.is_live;
+                const timeStr = isLive ? 'LIVE' : date.toLocaleString('en-US', { 
+                    month: 'short', 
+                    day: 'numeric', 
+                    hour: '2-digit', 
+                    minute: '2-digit' 
+                });
+                
+                return `
+                    <div class="p-2 bg-base-200 rounded-lg hover:bg-base-300 transition-colors">
+                        <div class="flex justify-between items-start text-xs">
+                            <div class="flex-1">
+                                <div class="font-semibold">${fixture.home_team} vs ${fixture.away_team}</div>
+                                <div class="opacity-70 text-[10px]">${fixture.league_title}</div>
+                            </div>
+                            <div class="text-right">
+                                ${isLive ? '<span class="badge badge-error badge-xs">LIVE</span>' : ''}
+                                <div class="opacity-70 mt-1">${timeStr}</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        } catch (e) {
+            console.error('Failed to load fixtures:', e);
+        }
+    }
+
+    function changePreset(presetId, presetName) {
+        currentPresetId = presetId;
+        document.getElementById('selected-preset-name').textContent = presetName;
+        
+        // Close the dropdown
+        document.activeElement.blur();
+        
+        // Reconnect websocket
+        if (websocket) {
+            websocket.close();
+        }
+        connectWebSocket(presetId);
+    }
+
+    function connectWebSocket(presetId) {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${window.location.host}/ws/tradefeed/${presetId}`;
+        
+        websocket = new WebSocket(wsUrl);
+        
+        websocket.onopen = () => {
+            console.log('WebSocket connected');
+            const indicator = document.getElementById('ws-indicator');
+            indicator.classList.remove('status-disconnected');
+            indicator.classList.add('status-connected');
+            indicator.setAttribute('data-tip', 'Connected');
+            
+            clearTimeout(reconnectTimeout);
+        };
+        
+        websocket.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                updateTradeFeed(data);
+            } catch (e) {
+                console.error('Failed to parse WebSocket message:', e);
+            }
+        };
+        
+        websocket.onerror = (error) => {
+            console.error('WebSocket error:', error);
+        };
+        
+        websocket.onclose = () => {
+            console.log('WebSocket disconnected');
+            const indicator = document.getElementById('ws-indicator');
+            indicator.classList.remove('status-connected');
+            indicator.classList.add('status-disconnected');
+            indicator.setAttribute('data-tip', 'Disconnected - Reconnecting...');
+            
+            // Attempt to reconnect after 3 seconds
+            reconnectTimeout = setTimeout(() => {
+                if (currentPresetId) {
+                    connectWebSocket(currentPresetId);
+                }
+            }, 3000);
+        };
+    }
+
+    function updateTradeFeed(data) {
+        const tbody = document.getElementById('trade-feed-body');
+        
+        if (!data.odds || data.odds.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="5" class="text-center py-6 text-sm opacity-70">
+                        No trades available for this preset
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+        
+        // Sort by edge (highest first)
+        const sortedOdds = [...data.odds].sort((a, b) => b.edge - a.edge);
+        
+        // Take top 20 for dashboard
+        const displayOdds = sortedOdds.slice(0, 20);
+        
+        tbody.innerHTML = displayOdds.map(odd => {
+            const eventTime = new Date(odd.event_commence_time);
+            const timeStr = eventTime.toLocaleString('en-US', { 
+                month: 'short', 
+                day: 'numeric', 
+                hour: '2-digit', 
+                minute: '2-digit' 
+            });
+            
+            // Check for odds change
+            const oddKey = `${odd.event_id}_${odd.bookmaker_key}_${odd.market_key}_${odd.selection}`;
+            const prevPrice = previousOdds[oddKey];
+            let flashClass = '';
+            
+            if (prevPrice !== undefined && prevPrice !== odd.price) {
+                flashClass = odd.price > prevPrice ? 'flash-increase' : 'flash-decrease';
+            }
+            previousOdds[oddKey] = odd.price;
+            
+            const edgeColor = odd.edge >= 5 ? 'text-success' : odd.edge >= 3 ? 'text-warning' : '';
+            
+            return `
+                <tr class="text-xs hover:bg-base-200">
+                    <td class="px-2 whitespace-nowrap">${timeStr}</td>
+                    <td class="px-2">
+                        <div class="font-semibold">${odd.home_team} vs ${odd.away_team}</div>
+                        <div class="opacity-70 text-[10px]">${odd.market_key} - ${odd.selection}</div>
+                    </td>
+                    <td class="px-2 text-center font-mono ${flashClass}">${odd.price.toFixed(2)}</td>
+                    <td class="px-2 text-center font-mono ${edgeColor}">${odd.edge.toFixed(1)}%</td>
+                    <td class="px-2 text-center">
+                        <a href="${odd.url || '#'}" target="_blank" class="btn btn-xs btn-primary">Bet</a>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    }
+
+    // Refresh data periodically
+    setInterval(loadBetStats, 60000); // Every minute
+    setInterval(loadUpcomingFixtures, 60000); // Every minute
+</script>
 {% endblock %}
