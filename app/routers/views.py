@@ -129,19 +129,20 @@ async def get_dashboard_bet_stats(db: AsyncSession = Depends(get_db)):
 
 @router.get("/api/dashboard/upcoming-fixtures")
 async def get_dashboard_upcoming_fixtures(db: AsyncSession = Depends(get_db)):
-    """Get next 5 upcoming fixtures including live matches"""
-    # Get events from 2 hours ago (for live matches) to future
+    """Get upcoming fixtures for the next 3 days including live matches"""
+    # Get events from 2 hours ago (for live matches) to 3 days in the future
     cutoff_time = datetime.now(timezone.utc) - timedelta(hours=2)
+    end_time = datetime.now(timezone.utc) + timedelta(days=3)
     
     query = (
         select(Event)
         .options(selectinload(Event.league))
         .where(
             Event.active == True,
-            Event.commence_time >= cutoff_time
+            Event.commence_time >= cutoff_time,
+            Event.commence_time <= end_time
         )
         .order_by(Event.commence_time.asc())
-        .limit(5)
     )
     
     result = await db.execute(query)
@@ -163,6 +164,7 @@ async def get_dashboard_upcoming_fixtures(db: AsyncSession = Depends(get_db)):
             "home_team": event.home_team,
             "away_team": event.away_team,
             "commence_time": event_time.isoformat(),
+            "commence_time_utc": event_time.strftime('%Y-%m-%d %H:%M UTC'),  # For tooltip
             "league_title": event.league.title if event.league else event.sport_key,
             "sport_key": event.sport_key,
             "is_live": is_live

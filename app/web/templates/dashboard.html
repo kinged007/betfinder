@@ -109,7 +109,7 @@
                 <div class="card-body p-4">
                     <h3 class="card-title text-lg mb-3">Upcoming Fixtures</h3>
                     
-                    <div id="fixtures-list" class="space-y-2">
+                    <div id="fixtures-list" class="space-y-2 max-h-[300px] overflow-y-auto">
                         <div class="flex justify-center py-4">
                             <span class="loading loading-spinner loading-md"></span>
                         </div>
@@ -159,6 +159,7 @@
                             <th class="px-2">Time</th>
                             <th class="px-2">Market</th>
                             <th class="px-2 text-center">Odds</th>
+                            <th class="px-2 text-center">Prob</th>
                             <th class="px-2 text-center">Edge</th>
                             <th class="px-2 text-center">Action</th>
                         </tr>
@@ -301,6 +302,7 @@
                     hour: '2-digit', 
                     minute: '2-digit' 
                 });
+                const gmtTime = fixture.commence_time_utc || '';
                 
                 return `
                     <div class="p-2 bg-base-200 rounded-lg hover:bg-base-300 transition-colors">
@@ -311,7 +313,9 @@
                             </div>
                             <div class="text-right">
                                 ${isLive ? '<span class="badge badge-error badge-xs">LIVE</span>' : ''}
-                                <div class="opacity-70 mt-1">${escapeHtml(timeStr)}</div>
+                                <div class="opacity-70 mt-1 tooltip tooltip-left" data-tip="${escapeHtml(gmtTime)}">
+                                    ${escapeHtml(timeStr)}
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -390,7 +394,7 @@
         if (opportunities.length === 0) {
             tbody.innerHTML = `
                 <tr>
-                    <td colspan="5" class="text-center py-6 text-sm opacity-70">
+                    <td colspan="6" class="text-center py-6 text-sm opacity-70">
                         No trades available for this preset
                     </td>
                 </tr>
@@ -412,7 +416,8 @@
         const displayOdds = sortedOdds.slice(0, 20);
         
         tbody.innerHTML = displayOdds.map(odd => {
-            const eventTime = new Date(odd.event_commence_time);
+            // Use start_time instead of event_commence_time
+            const eventTime = new Date(odd.start_time);
             const timeStr = eventTime.toLocaleString('en-US', { 
                 month: 'short', 
                 day: 'numeric', 
@@ -421,7 +426,7 @@
             });
             
             // Check for odds change
-            const oddKey = `${odd.event_id}_${odd.bookmaker_key}_${odd.market_key}_${odd.selection}`;
+            const oddKey = `${odd.event_id}_${odd.bookmaker_key}_${odd.market}_${odd.selection}`;
             const prevPrice = previousOdds[oddKey];
             let flashClass = '';
             
@@ -430,19 +435,33 @@
             }
             previousOdds[oddKey] = odd.price;
             
-            const edgeColor = odd.edge >= 5 ? 'text-success' : odd.edge >= 3 ? 'text-warning' : '';
+            // Calculate edge from true_odds if available
+            const edge = odd.true_odds ? ((odd.price / odd.true_odds - 1) * 100) : odd.edge;
+            const edgeColor = edge >= 5 ? 'text-success' : edge >= 3 ? 'text-warning' : '';
+            
+            // Calculate probability (round to whole number)
+            const probability = odd.implied_probability ? Math.round(odd.implied_probability * 100) : Math.round((1 / odd.price) * 100);
+            
+            // Format selection with capitalization and point
+            const selectionDisplay = odd.selection.charAt(0).toUpperCase() + odd.selection.slice(1).toLowerCase();
+            const pointDisplay = odd.point !== null && odd.point !== undefined ? ` (${odd.point > 0 ? '+' : ''}${odd.point})` : '';
+            const fullSelection = `${selectionDisplay}${pointDisplay}`;
+            
+            // Prepare item data for modal
+            const itemJson = JSON.stringify(odd).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
             
             return `
-                <tr class="text-xs hover:bg-base-200">
+                <tr class="text-xs hover:bg-base-200 cursor-pointer" onclick='openBetModal(${itemJson})'>
                     <td class="px-2 whitespace-nowrap">${escapeHtml(timeStr)}</td>
                     <td class="px-2">
-                        <div class="font-semibold">${escapeHtml(odd.home_team)} vs ${escapeHtml(odd.away_team)}</div>
-                        <div class="opacity-70 text-[10px]">${escapeHtml(odd.market_key)} - ${escapeHtml(odd.selection)}</div>
+                        <div class="font-semibold">${escapeHtml(odd.home)} vs ${escapeHtml(odd.away)}</div>
+                        <div class="opacity-70 text-[10px]">${escapeHtml(odd.market)} - ${escapeHtml(fullSelection)}</div>
                     </td>
                     <td class="px-2 text-center font-mono ${flashClass}">${Number(odd.price).toFixed(2)}</td>
-                    <td class="px-2 text-center font-mono ${edgeColor}">${Number(odd.edge).toFixed(1)}%</td>
+                    <td class="px-2 text-center font-mono">${probability}%</td>
+                    <td class="px-2 text-center font-mono ${edgeColor}">${Number(edge).toFixed(1)}%</td>
                     <td class="px-2 text-center">
-                        <a href="${escapeHtml(odd.url || '#')}" target="_blank" class="btn btn-xs btn-primary">Bet</a>
+                        <button class="btn btn-xs btn-primary" onclick="event.stopPropagation(); openBetModal(${itemJson})">Bet</button>
                     </td>
                 </tr>
             `;
@@ -452,5 +471,186 @@
     // Refresh data periodically
     setInterval(loadBetStats, 60000); // Every minute
     setInterval(loadUpcomingFixtures, 60000); // Every minute
+
+    // Bet Modal Functions
+    function openBetModal(item) {
+        // Store all data in hidden fields
+        document.getElementById('modal-event-id').value = item.event_id;
+        document.getElementById('modal-home').value = item.home;
+        document.getElementById('modal-away').value = item.away;
+        document.getElementById('modal-sport').value = item.sport;
+        document.getElementById('modal-league').value = item.league;
+        document.getElementById('modal-market').value = item.market;
+        document.getElementById('modal-selection').value = item.selection;
+        document.getElementById('modal-bookmaker').value = item.bookmaker;
+        document.getElementById('modal-bookmaker-key').value = item.bookmaker_key;
+        document.getElementById('modal-odds').value = item.price.toFixed(2);
+        document.getElementById('modal-true-odds').value = item.true_odds || item.price;
+        document.getElementById('modal-point').value = item.point || '';
+        document.getElementById('modal-url').value = item.url || '';
+        document.getElementById('modal-start-time-val').value = item.start_time;
+
+        // Probability from true odds (benchmark), if true odds, else use current odds
+        const trueProbability = item.true_odds ? (1 / item.true_odds * 100).toFixed(2) : (1 / item.price * 100).toFixed(2);
+        document.getElementById('modal-probability').value = trueProbability;
+        document.getElementById('modal-prob-display').textContent = `${trueProbability}%`;
+
+        // Populate visible fields
+        document.getElementById('modal-home-display').textContent = item.home;
+        document.getElementById('modal-away-display').textContent = item.away;
+        document.getElementById('modal-league-short').textContent = item.league;
+
+        // Format market + selection (include point if available)
+        const selectionName = item.selection_name || item.selection;
+        const selectionNorm = item.selection.charAt(0).toUpperCase() + item.selection.slice(1).toLowerCase();
+        const marketKey = item.market.toUpperCase();
+        const pointDisplay = item.point !== null && item.point !== undefined ? ` (${item.point > 0 ? '+' : ''}${item.point})` : '';
+        document.getElementById('modal-market-selection').textContent = `${selectionName}${pointDisplay} (${selectionNorm}) - ${marketKey}`;
+
+        document.getElementById('modal-bookmaker-name').textContent = item.bookmaker;
+
+        // Handle Link
+        const linkBtn = document.getElementById('modal-bookmaker-link');
+        if (item.url) {
+            linkBtn.href = item.url;
+            linkBtn.classList.remove('hidden');
+        } else {
+            linkBtn.classList.add('hidden');
+        }
+
+        // Time display - simple format for dashboard
+        const timeDate = new Date(item.start_time);
+        const timeDisplay = timeDate.toLocaleString('en-US', { 
+            month: 'short', 
+            day: 'numeric', 
+            hour: '2-digit', 
+            minute: '2-digit' 
+        });
+        document.getElementById('modal-time-text').textContent = timeDisplay;
+
+        // Initialize Stake
+        const defaultStake = 10;
+        document.getElementById('modal-stake').value = defaultStake;
+
+        recalculateEdge();
+        document.getElementById('bet-modal').showModal();
+    }
+
+    function recalculateEdge() {
+        const price = parseFloat(document.getElementById('modal-odds').value);
+        const trueOdds = parseFloat(document.getElementById('modal-true-odds').value);
+
+        if (price && trueOdds) {
+            const edge = ((price / trueOdds - 1) * 100).toFixed(2);
+            document.getElementById('modal-edge').textContent = `${edge}%`;
+        }
+    }
+
+    async function submitBet() {
+        const data = {
+            event_id: document.getElementById('modal-event-id').value,
+            home: document.getElementById('modal-home').value,
+            away: document.getElementById('modal-away').value,
+            sport: document.getElementById('modal-sport').value,
+            league: document.getElementById('modal-league').value,
+            market_key: document.getElementById('modal-market').value,
+            selection: document.getElementById('modal-selection').value,
+            bookmaker: document.getElementById('modal-bookmaker').value,
+            bookmaker_key: document.getElementById('modal-bookmaker-key').value,
+            price: parseFloat(document.getElementById('modal-odds').value),
+            stake: parseFloat(document.getElementById('modal-stake').value),
+            point: document.getElementById('modal-point').value || null,
+            url: document.getElementById('modal-url').value || null,
+            start_time: document.getElementById('modal-start-time-val').value,
+            preset_id: parseInt(document.getElementById('modal-preset-id').value)
+        };
+
+        try {
+            const response = await fetch('/api/bets/manual', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+
+            if (response.ok) {
+                document.getElementById('bet-modal').close();
+                alert('Trade registered successfully!');
+            } else {
+                const error = await response.json();
+                alert(`Error: ${error.detail || 'Failed to register trade'}`);
+            }
+        } catch (e) {
+            alert(`Error: ${e.message}`);
+        }
+    }
 </script>
+
+<!-- Betting Modal -->
+<dialog id="bet-modal" class="modal">
+    <div class="modal-box max-w-md">
+        <div class="flex justify-between items-start mb-3">
+            <div class="flex-1">
+                <div class="flex items-center gap-2 text-base font-semibold">
+                    <span id="modal-home-display"></span>
+                    <span class="opacity-50">vs</span>
+                    <span id="modal-away-display"></span>
+                </div>
+                <div class="flex items-center gap-2 text-xs opacity-60 mt-1">
+                    <span id="modal-league-short"></span>
+                    <span class="opacity-50">•</span>
+                    <span id="modal-time-text"></span>
+                </div>
+            </div>
+            <button onclick="document.getElementById('bet-modal').close()" class="btn btn-sm btn-ghost btn-circle">✕</button>
+        </div>
+        <div class="text-center mb-6">
+            <h3 class="text-lg font-bold text-info" id="modal-market-selection"></h3>
+        </div>
+        <div class="grid grid-cols-3 gap-2 mb-6">
+            <div class="text-center">
+                <div class="text-xs opacity-60 uppercase mb-1">Odds</div>
+                <input type="number" step="0.01" id="modal-odds" class="input input-bordered input-sm w-full text-center font-bold" oninput="recalculateEdge()" />
+            </div>
+            <div class="text-center">
+                <div class="text-xs opacity-60 uppercase mb-1">Prob</div>
+                <div class="font-bold text-lg" id="modal-prob-display"></div>
+            </div>
+            <div class="text-center">
+                <div class="text-xs opacity-60 uppercase mb-1">Edge</div>
+                <div class="font-bold text-lg text-success" id="modal-edge"></div>
+            </div>
+        </div>
+        <div class="text-center text-sm opacity-70 mb-4 flex items-center justify-center gap-2">
+            Place this trade with <span id="modal-bookmaker-name" class="font-semibold"></span>
+            <a id="modal-bookmaker-link" href="#" target="_blank" class="hidden btn btn-ghost btn-xs btn-circle p-0 h-6 w-6">
+                <svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+                </svg>
+            </a>
+        </div>
+        <div class="mb-6">
+            <div class="relative flex items-center">
+                <input type="number" step="0.01" id="modal-stake" class="input input-bordered input-lg w-full text-center text-2xl pr-16" value="10" />
+                <span class="absolute right-4 text-base opacity-50 bg-base-100 px-2">EUR</span>
+            </div>
+        </div>
+        <button class="btn btn-primary btn-block btn-lg" onclick="submitBet()">REGISTER TRADE</button>
+        <input type="hidden" id="modal-event-id" />
+        <input type="hidden" id="modal-home" />
+        <input type="hidden" id="modal-away" />
+        <input type="hidden" id="modal-sport" />
+        <input type="hidden" id="modal-league" />
+        <input type="hidden" id="modal-market" />
+        <input type="hidden" id="modal-selection" />
+        <input type="hidden" id="modal-bookmaker" />
+        <input type="hidden" id="modal-bookmaker-key" />
+        <input type="hidden" id="modal-true-odds" />
+        <input type="hidden" id="modal-probability" />
+        <input type="hidden" id="modal-point" />
+        <input type="hidden" id="modal-url" />
+        <input type="hidden" id="modal-start-time-val" />
+        <input type="hidden" id="modal-preset-id" value="{{ first_preset.id if first_preset else '' }}" />
+    </div>
+</dialog>
+
 {% endblock %}
