@@ -394,6 +394,18 @@ async def register_manual_bet(
     await db.commit()
     await db.refresh(new_bet)
     
+    # Send Notification if preset attached
+    if bet_in.preset_id:
+        preset = await db.get(Preset, bet_in.preset_id)
+        if preset:
+            from app.services.notifications.manager import NotificationManager
+            nm = NotificationManager(db)
+            # Fire and forget? ideally background task, but this is simple enough to await
+            try:
+                await nm.send_bet_notification(preset, new_bet)
+            except Exception as e:
+                logging.getLogger(__name__).error(f"Failed to send manual bet notification: {e}")
+
     return {"status": "success", "bet_id": new_bet.id}
 
 from app.services.analytics.trade_finder import TradeFinderService

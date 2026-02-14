@@ -478,6 +478,8 @@
                 </div>
                 <div class="flex gap-3">
                     <button type="button" class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+                    <button type="button" id="duplicate-btn" class="btn btn-secondary hidden"
+                        onclick="duplicatePreset(document.getElementById('edit_preset_id').value)">Duplicate</button>
                     <button type="button" id="submit-btn" class="btn btn-primary"
                         onclick="submitPreset()">Create</button>
                 </div>
@@ -631,6 +633,7 @@
         document.getElementById('modal-title').innerText = "Create New Preset";
         document.getElementById('submit-btn').innerText = "Create Preset";
         document.getElementById('modal-delete-btn').classList.add('hidden');
+        document.getElementById('duplicate-btn').classList.add('hidden');
         form.querySelector('[name="active"]').checked = true;
         form.querySelector('[name="ignore_benchmarks"]').checked = false;
 
@@ -653,6 +656,7 @@
         document.getElementById('modal-title').innerText = "Edit Preset: " + preset.name;
         document.getElementById('submit-btn').innerText = "Update";
         document.getElementById('modal-delete-btn').classList.remove('hidden');
+        document.getElementById('duplicate-btn').classList.remove('hidden');
 
         form.querySelector('[name="name"]').value = preset.name;
         form.querySelector('[name="active"]').checked = preset.active;
@@ -729,6 +733,70 @@
         }
         else if (res.status === 403) window.location.href = '/login';
         else showToast("Failed to delete", "error");
+    }
+
+    async function duplicatePreset(id) {
+        if (!confirm("Duplicate this preset?")) return;
+
+        // Fetch current form data to use as base, or just fetch the preset again?
+        // Since the form is open and populated, we can scrape the form similar to submitPreset
+        // But it's safer to just fetch the original preset source if we want exact copy, 
+        // OR rely on the form state if we want to support "Edit -> Duplicate as new".
+        // The requirement says "maintain all configurations", implying exact copy.
+        // Let's reuse submitPreset logic but as a POST with modified name.
+
+        const form = document.getElementById('createPresetForm');
+
+        // 1. Gather Data (Reuse submit logic manually to avoid touching ID)
+        const data = {
+            name: form.querySelector('[name="name"]').value + " copy",
+            sports: Array.from(document.querySelectorAll('input[name="sports"]:checked')).map(cb => cb.value),
+            bookmakers: Array.from(document.querySelectorAll('input[name="bookmakers"]:checked')).map(cb => cb.value),
+            leagues: Array.from(document.querySelectorAll('input[name="leagues"]:checked')).map(cb => cb.value),
+            markets: Array.from(document.querySelectorAll('input[name="markets"]:checked')).map(cb => cb.value),
+            selections: Array.from(document.querySelectorAll('input[name="selections"]:checked')).map(cb => cb.value),
+            active: form.querySelector('[name="active"]').checked,
+            auto_trade: form.querySelector('[name="auto_trade"]').checked,
+            ignore_benchmarks: form.querySelector('[name="ignore_benchmarks"]').checked,
+            show_popular_leagues: form.querySelector('[name="show_popular_leagues"]').checked,
+            min_odds: parseFloat(form.querySelector('[name="min_odds"]').value) || null,
+            max_odds: parseFloat(form.querySelector('[name="max_odds"]').value) || null,
+            min_edge: parseFloat(form.querySelector('[name="min_edge"]').value) || null,
+            max_edge: parseFloat(form.querySelector('[name="max_edge"]').value) || null,
+            min_probability: parseFloat(form.querySelector('[name="min_probability"]').value) || null,
+            max_probability: parseFloat(form.querySelector('[name="max_probability"]').value) || null,
+            is_live: form.querySelector('input[name="is_live"]:checked').value === 'true',
+            hours_before_min: parseInt(form.querySelector('[name="hours_before_min"]').value) || null,
+            hours_before_max: parseInt(form.querySelector('[name="hours_before_max"]').value) || null,
+            default_stake: parseFloat(form.querySelector('[name="default_stake"]').value) || 10.0,
+            after_trade_action: form.querySelector('[name="after_trade_action"]').value,
+            other_config: {}
+        };
+
+        // Collect Other Config
+        document.querySelectorAll('[data-other-config="true"]').forEach(el => {
+            const key = el.getAttribute('data-key');
+            data.other_config[key] = el.value;
+        });
+
+        // 2. Submit as new POST
+        const res = await fetch('/api/v1/presets', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(data)
+        });
+
+        if (res.ok) {
+            showToast("Preset duplicated", "success");
+            setTimeout(() => window.location.href = window.location.pathname, 1000);
+        } else if (res.status === 403) {
+            window.location.href = '/login';
+        } else {
+            const err = await res.json();
+            showToast('Error: ' + (err.detail || JSON.stringify(err)), "error");
+        }
     }
 
     async function submitPreset() {

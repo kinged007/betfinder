@@ -37,6 +37,9 @@ async def place_bet(
     if not bookmaker_model:
         raise HTTPException(status_code=404, detail="Bookmaker not found")
 
+    # Lazy import to avoid circular dependency
+    from app.services.notifications.manager import NotificationManager
+
     # 2. Instantiate Bookmaker Service
     # Factory uses 'key' e.g. 'smarkets'
     bm_service: AbstractBookmaker = BookmakerFactory.get_bookmaker(
@@ -127,6 +130,18 @@ async def place_bet(
         if response.get("status") == "success" or response.get("status") == "pending":
             update_data["status"] = BetStatus.OPEN.value # Or pending if async confirmation
             update_data["external_id"] = response.get("external_id")
+            
+            # Send Notification if preset_id is present
+            if bet_obj.preset_id:
+                try:
+                    preset = await db.get(schemas.Preset, bet_obj.preset_id)
+                    if preset:
+                        notifier = NotificationManager(db)
+                        await notifier.send_bet_notification(preset, bet_obj)
+                except Exception as e:
+                    import logging
+                    logging.getLogger(__name__).error(f"Failed to send bet notification: {e}", exc_info=True)
+
         else:
             update_data["status"] = "error"
             # Log error?

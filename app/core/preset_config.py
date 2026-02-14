@@ -40,12 +40,23 @@ PRESET_OTHER_CONFIG_SCHEMA: List[Dict[str, Any]] = [
     },
     {
         "key": "notification_new_bet",
-        "label": "Notification New Bet",
+        "label": "Notification on Opportunity",
         "type": "select",
         "options": [
             {"value": "true", "label": "Enabled"},
             {"value": "false", "label": "Disabled"}
         ],
         "default": "true"
-    }
+    },
+    {
+        "key": "notification_on_bet",
+        "label": "Notification Bet Placed",
+        "type": "select",
+        "options": [
+            {"value": "true", "label": "Enabled"},
+            {"value": "false", "label": "Disabled"}
+        ],
+        "default": "true"
+    },
+
 ]

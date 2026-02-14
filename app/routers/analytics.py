@@ -11,6 +11,7 @@ from app.core.security import check_session
 from typing import List, Optional
 from datetime import datetime, timezone
 from pydantic import BaseModel
+from collections import defaultdict
 
 router = APIRouter(dependencies=[Depends(check_session)])
 templates = Jinja2Templates(directory="app/web/templates")
@@ -132,6 +133,8 @@ async def analytics_data(
     
     # Calculate Bankroll over time
     chart_data = []
+    daily_pnl = defaultdict(float)
+    
     running_balance = 0.0
     total_staked = 0.0
     total_returned = 0.0
@@ -158,20 +161,30 @@ async def analytics_data(
             pnl = 0.0
             voids += 1
             
+        # Accumulate global stats
         running_balance += pnl
         total_staked += bet.stake
         
-        # Chart Point
+        # Aggregate daily PnL
         ts = bet.settled_at if bet.settled_at else bet.placed_at
-        
-        chart_data.append({
-            'x': ts.isoformat(),
-            'y': round(running_balance, 2),
-            'bet_id': bet.id,
-            'pnl': round(pnl, 2)
-        })
+        date_str = ts.strftime('%Y-%m-%d')
+        daily_pnl[date_str] += pnl
         
         rows_html_data.append(bet)
+
+    # Build Chart Data from Aggregated Daily PnL
+    sorted_dates = sorted(daily_pnl.keys())
+    cumulative_balance = 0.0
+    
+    for date_str in sorted_dates:
+        day_pnl = daily_pnl[date_str]
+        cumulative_balance += day_pnl
+        
+        chart_data.append({
+            'x': date_str,
+            'y': round(cumulative_balance, 2),
+            'pnl': round(day_pnl, 2)
+        })
         
     # Python Sort for Table Display
     def get_sort_key(b):

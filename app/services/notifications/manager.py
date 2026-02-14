@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, cast
 from sqlalchemy.dialects.postgresql import JSONB
-from app.db.models import Notification, Preset
+from app.db.models import Notification, Preset, Bet
 from app.services.notifications.telegram import TelegramNotifier
 from app.services.analytics.trade_finder import TradeOpportunity
 
@@ -156,6 +156,101 @@ class NotificationManager:
             type="error",
             message=full_message,
             data={},
+            sent=True,
+            processed_at=datetime.now(timezone.utc)
+        )
+        self.db.add(new_notification)
+        await self.db.commit()
+
+    async def send_bet_notification(self, preset: Preset, bet: Bet):
+        """
+        Sends a notification when a bet is placed (manually or auto).
+        Checks if "notification_on_bet" is enabled in preset config.
+        """
+        # 1. Check Config
+        config = preset.other_config or {}
+        notif_enabled = config.get("notification_on_bet", "true")
+        
+        logger.info(f"Checking notification for preset '{preset.name}' (ID: {preset.id}). Config: {config}. Enabled: {notif_enabled}")
+
+        # Default is True (matches schema)
+        if notif_enabled != "true":
+            logger.info("Notification disabled in config.")
+            return
+
+        # 2. Construct Message
+        # Similar to trade notification but indicates "Bet Placed"
+        
+        # Emoji Map
+        sport_emojis = {
+            "soccer": "⚽",
+            "basketball": "🏀",
+            "tennis": "🎾",
+            "americanfootball": "🏈",
+            "baseball": "⚾",
+            "icehockey": "🏒",
+            "golf": "⛳",
+            "boxing": "🥊",
+            "mma": "🥋",
+            "rugby": "🏉",
+            "cricket": "🏏"
+        }
+        
+        # Extract sport key from event_data snapshot or relationship
+        sport_key = "unknown"
+        if bet.event_data and "sport_key" in bet.event_data:
+            sport_key = bet.event_data["sport_key"]
+        
+        sport_icon = sport_emojis.get(sport_key, "🏆")
+        
+        # Details
+        home_team = bet.event_data.get("home_team") if bet.event_data else "Unknown"
+        away_team = bet.event_data.get("away_team") if bet.event_data else "Unknown"
+        
+        market_key = bet.market_key.upper()
+        selection = bet.selection
+        price = bet.price
+        bookmaker_name = bet.bookmaker.title if bet.bookmaker else "Unknown Bookmaker"
+        
+        # Edge/Prob if available
+        # They should be in odd_data
+        edge_str = "-"
+        prob_str = "-"
+        if bet.odd_data:
+            if bet.odd_data.get("edge"):
+                edge_str = f"{bet.odd_data['edge']*100:.1f}%"
+            if bet.odd_data.get("implied_probability"):
+                prob_str = f"{bet.odd_data['implied_probability']:.1%}"
+
+        message = (
+            f"✅ *{preset.name} - Bet Placed*\n"
+            f"{sport_icon} `{home_team}` vs `{away_team}`\n"
+            f"{market_key} - `{selection}` @{price} ({bookmaker_name})\n"
+            f"Stake: {bet.stake}\n"
+            f"Prob: {prob_str}\n"
+            f"Edge: {edge_str}\n"
+            f"ID: #{bet.id}"
+        )
+
+        # 3. Send Notification
+        logger.info(f"Sending Telegram notification for bet {bet.id}...")
+        try:
+            await self.telegram.send_message(message)
+            logger.info("Telegram notification sent successfully.")
+        except Exception as e:
+            logger.error(f"Failed to send Telegram notification: {e}", exc_info=True)
+        
+        # 4. Record Notification
+        # Unique Key: (bet_id)
+        dedupe_key = {
+            "type": "bet_placed",
+            "bet_id": bet.id
+        }
+        
+        new_notification = Notification(
+            type="bet_alert",
+            message=message,
+            data=dedupe_key,
             sent=True,
             processed_at=datetime.now(timezone.utc)
         )

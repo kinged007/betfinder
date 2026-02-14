@@ -13,6 +13,7 @@ from datetime import datetime, timezone, timedelta
 from app.db.models import Preset, Bet, Bookmaker, PresetHiddenItem
 from app.services.analytics.trade_finder import TradeFinderService, TradeOpportunity
 from app.services.bookmakers.base import APIBookmaker, BookmakerFactory
+from app.services.notifications.manager import NotificationManager
 
 logger = logging.getLogger(__name__)
 
@@ -324,6 +325,13 @@ class AutoTradeService:
                 # Post-trade actions (Hide opportunity)
                 await AutoTradeService._process_after_trade_actions(db, preset, opportunity)
                 
+                # Send Notification
+                try:
+                    notifier = NotificationManager(db)
+                    await notifier.send_bet_notification(preset, bet)
+                except Exception as e:
+                    logger.error(f"Failed to send bet notification: {e}", exc_info=True)
+
                 return True
             else:
                 error_msg = result.get('error') or result.get('message') or 'Unknown error'
