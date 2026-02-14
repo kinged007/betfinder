@@ -418,12 +418,15 @@
         tbody.innerHTML = displayOdds.map(odd => {
             // Use start_time instead of event_commence_time
             const eventTime = new Date(odd.start_time);
-            const timeStr = eventTime.toLocaleString('en-US', { 
+            const dateStr = eventTime.toLocaleString('en-US', { 
                 month: 'short', 
-                day: 'numeric', 
+                day: 'numeric'
+            });
+            const timeStr = eventTime.toLocaleString('en-US', { 
                 hour: '2-digit', 
                 minute: '2-digit' 
             });
+            const gmtTime = eventTime.toISOString().replace('T', ' ').substring(0, 16) + ' UTC';
             
             // Check for odds change
             const oddKey = `${odd.event_id}_${odd.bookmaker_key}_${odd.market}_${odd.selection}`;
@@ -437,7 +440,7 @@
             
             // Calculate edge from true_odds if available
             const edge = odd.true_odds ? ((odd.price / odd.true_odds - 1) * 100) : odd.edge;
-            const edgeColor = edge >= 5 ? 'text-success' : edge >= 3 ? 'text-warning' : '';
+            const edgeColor = edge > 0 ? 'text-success' : 'text-error';
             
             // Calculate probability (round to whole number)
             const probability = odd.implied_probability ? Math.round(odd.implied_probability * 100) : Math.round((1 / odd.price) * 100);
@@ -447,19 +450,27 @@
             const pointDisplay = odd.point !== null && odd.point !== undefined ? ` (${odd.point > 0 ? '+' : ''}${odd.point})` : '';
             const fullSelection = `${selectionDisplay}${pointDisplay}`;
             
+            // Market key uppercase
+            const marketUpper = odd.market.toUpperCase();
+            
             // Prepare item data for modal
             const itemJson = JSON.stringify(odd).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
             
             return `
                 <tr class="text-xs hover:bg-base-200 cursor-pointer" onclick='openBetModal(${itemJson})'>
-                    <td class="px-2 whitespace-nowrap">${escapeHtml(timeStr)}</td>
+                    <td class="px-2 whitespace-nowrap">
+                        <div class="tooltip tooltip-right" data-tip="${escapeHtml(gmtTime)}">
+                            <div>${escapeHtml(dateStr)}</div>
+                            <div class="opacity-70">${escapeHtml(timeStr)}</div>
+                        </div>
+                    </td>
                     <td class="px-2">
                         <div class="font-semibold">${escapeHtml(odd.home)} vs ${escapeHtml(odd.away)}</div>
-                        <div class="opacity-70 text-[10px]">${escapeHtml(odd.market)} - ${escapeHtml(fullSelection)}</div>
+                        <div class="opacity-70 text-[10px]">${escapeHtml(marketUpper)} - ${escapeHtml(fullSelection)}</div>
                     </td>
-                    <td class="px-2 text-center font-mono ${flashClass}">${Number(odd.price).toFixed(2)}</td>
-                    <td class="px-2 text-center font-mono">${probability}%</td>
-                    <td class="px-2 text-center font-mono ${edgeColor}">${Number(edge).toFixed(1)}%</td>
+                    <td class="px-2 text-center font-mono text-info ${flashClass}">${Number(odd.price).toFixed(2)}</td>
+                    <td class="px-2 text-center font-mono opacity-70">${probability}%</td>
+                    <td class="px-2 text-center font-mono ${edgeColor}">${edge > 0 ? '+' : ''}${Number(edge).toFixed(1)}%</td>
                     <td class="px-2 text-center">
                         <button class="btn btn-xs btn-primary" onclick="event.stopPropagation(); openBetModal(${itemJson})">Bet</button>
                     </td>
@@ -566,7 +577,7 @@
         };
 
         try {
-            const response = await fetch('/api/bets/manual', {
+            const response = await fetch('/bets', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(data)
