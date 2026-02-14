@@ -3,6 +3,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, case, func, or_
+from sqlalchemy.orm import selectinload
 from app.api.deps import get_db
 from app.db.models import Bet, Bookmaker, Event, Market, Preset, Sport, League, Mapping
 from app.domain import schemas
@@ -10,10 +11,17 @@ from app.core.config import settings
 from app.core.enums import BetResult, BetStatus
 import logging
 from pydantic import BaseModel
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+from collections import defaultdict
 from app.core.preset_config import PRESET_OTHER_CONFIG_SCHEMA
 from app.core.security import check_session
 from typing import Optional
+
+# Constants for bet status
+BET_STATUS_WON = 'won'
+BET_STATUS_LOST = 'lost'
+BET_STATUS_VOID = 'void'
+SETTLED_STATUSES = [BET_STATUS_WON, BET_STATUS_LOST, BET_STATUS_VOID]
 
 templates = Jinja2Templates(directory="app/web/templates")
 
@@ -48,11 +56,9 @@ async def dashboard_redirect():
 @router.get("/api/dashboard/bet-stats")
 async def get_dashboard_bet_stats(db: AsyncSession = Depends(get_db)):
     """Get summary statistics for the bet stats widget"""
-    from datetime import timedelta
-    
     # Query settled bets
     query = select(Bet).where(
-        Bet.status.in_(['won', 'lost', 'void'])
+        Bet.status.in_(SETTLED_STATUSES)
     )
     
     result = await db.execute(query)
@@ -67,32 +73,31 @@ async def get_dashboard_bet_stats(db: AsyncSession = Depends(get_db)):
     
     for bet in bets:
         total_staked += bet.stake
-        if bet.status == 'won':
+        if bet.status == BET_STATUS_WON:
             if bet.payout is not None:
                 pnl = bet.payout - bet.stake
             else:
                 pnl = (bet.stake * bet.price) - bet.stake
             total_profit += pnl
             wins += 1
-        elif bet.status == 'lost':
+        elif bet.status == BET_STATUS_LOST:
             total_profit -= bet.stake
             losses += 1
     
     roi = (total_profit / total_staked * 100) if total_staked > 0 else 0.0
     win_rate = (wins / (wins + losses) * 100) if (wins + losses) > 0 else 0.0
     
-    # Build chart data (last 30 days)
-    from collections import defaultdict
+    # Build chart data
     daily_pnl = defaultdict(float)
     
     for bet in bets:
         pnl = 0.0
-        if bet.status == 'won':
+        if bet.status == BET_STATUS_WON:
             if bet.payout is not None:
                 pnl = bet.payout - bet.stake
             else:
                 pnl = (bet.stake * bet.price) - bet.stake
-        elif bet.status == 'lost':
+        elif bet.status == BET_STATUS_LOST:
             pnl = -bet.stake
         
         ts = bet.settled_at if bet.settled_at else bet.placed_at
@@ -125,9 +130,6 @@ async def get_dashboard_bet_stats(db: AsyncSession = Depends(get_db)):
 @router.get("/api/dashboard/upcoming-fixtures")
 async def get_dashboard_upcoming_fixtures(db: AsyncSession = Depends(get_db)):
     """Get next 5 upcoming fixtures including live matches"""
-    from datetime import timedelta
-    from sqlalchemy.orm import selectinload
-    
     # Get events from 2 hours ago (for live matches) to future
     cutoff_time = datetime.now(timezone.utc) - timedelta(hours=2)
     
