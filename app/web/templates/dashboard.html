@@ -68,8 +68,8 @@
         <h2 class="text-2xl md:text-3xl font-bold">Dashboard</h2>
     </div>
 
-    <!-- Widgets Grid: 3 columns on desktop, 1 on mobile -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+    <!-- Widgets Grid: 2 columns on desktop, 1 on mobile -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
         
         <!-- Widget 1: My Bet Stats -->
         <div class="widget-container">
@@ -117,24 +117,6 @@
 
                     <div class="card-actions justify-end mt-2">
                         <a href="/fixtures" class="btn btn-sm btn-ghost">View All →</a>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Widget 3: Preview placeholder for trade feed (shown on desktop only) -->
-        <div class="widget-container hidden md:block">
-            <div class="card bg-base-100 shadow-xl">
-                <div class="card-body p-4">
-                    <h3 class="card-title text-lg mb-3">Live Trade Feed</h3>
-                    <p class="text-sm opacity-70">Real-time betting opportunities below</p>
-                    <div class="flex items-center justify-center h-[200px] opacity-50">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                        </svg>
-                    </div>
-                    <div class="card-actions justify-end mt-2">
-                        <a href="/trade-feed" class="btn btn-sm btn-ghost">Open Trade Feed →</a>
                     </div>
                 </div>
             </div>
@@ -402,7 +384,10 @@
     function updateTradeFeed(data) {
         const tbody = document.getElementById('trade-feed-body');
         
-        if (!data.odds || data.odds.length === 0) {
+        // WebSocket sends 'opportunities', not 'odds'
+        const opportunities = data.opportunities || [];
+        
+        if (opportunities.length === 0) {
             tbody.innerHTML = `
                 <tr>
                     <td colspan="5" class="text-center py-6 text-sm opacity-70">
@@ -421,7 +406,7 @@
         }
         
         // Sort by edge (highest first)
-        const sortedOdds = [...data.odds].sort((a, b) => b.edge - a.edge);
+        const sortedOdds = [...opportunities].sort((a, b) => b.edge - a.edge);
         
         // Take top 20 for dashboard
         const displayOdds = sortedOdds.slice(0, 20);

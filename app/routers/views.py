@@ -151,12 +151,18 @@ async def get_dashboard_upcoming_fixtures(db: AsyncSession = Depends(get_db)):
     now = datetime.now(timezone.utc)
     
     for event in events:
-        is_live = event.commence_time <= now
+        # Ensure commence_time is timezone-aware for comparison
+        event_time = event.commence_time
+        if event_time.tzinfo is None:
+            # If naive, assume UTC
+            event_time = event_time.replace(tzinfo=timezone.utc)
+        
+        is_live = event_time <= now
         fixtures.append({
             "id": event.id,
             "home_team": event.home_team,
             "away_team": event.away_team,
-            "commence_time": event.commence_time.isoformat(),
+            "commence_time": event_time.isoformat(),
             "league_title": event.league.title if event.league else event.sport_key,
             "sport_key": event.sport_key,
             "is_live": is_live
