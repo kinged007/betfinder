@@ -77,32 +77,42 @@
             <div class="grid grid-cols-1 md:grid-cols-8 gap-4 items-center">
                 <div class="form-control md:col-span-2">
                     <label class="label"><span class="label-text font-semibold">Preset Name</span></label>
-                    <input type="text" name="name" class="input input-bordered" required
+                    <input type="text" name="name" class="input input-bordered input-sm md:input-md" required
                         placeholder="e.g., NBA High Edge" />
                 </div>
-                <div class="hidden md:block"></div>
-                <div class="hidden md:block"></div>
-                <div class="hidden md:block"></div>
-                <div class="form-control">
-                    <label class="label"><span class="label-text font-semibold">Status</span></label><br />
-                    <label class="label cursor-pointer justify-start gap-3 bg-base-200 rounded-lg p-3">
-                        <input type="checkbox" name="active" class="toggle toggle-success" checked />
-                        <span class="label-text">Active</span>
-                    </label>
-                </div>
-                <div class="form-control">
-                    <label class="label"><span class="label-text font-semibold">Auto-Trade</span></label><br />
-                    <label class="label cursor-pointer justify-start gap-3 bg-base-200 rounded-lg p-3">
-                        <input type="checkbox" name="auto_trade" class="toggle toggle-primary" />
-                        <span class="label-text">Enabled</span>
-                    </label>
-                </div>
-                <div class="form-control">
-                    <label class="label"><span class="label-text font-semibold">Benchmarks</span></label><br />
-                    <label class="label cursor-pointer justify-start gap-3 bg-base-200 rounded-lg p-3">
-                        <input type="checkbox" name="ignore_benchmarks" class="toggle toggle-warning" />
-                        <span class="label-text">Ignore</span>
-                    </label>
+
+                <!-- Toggles Container -->
+                <div
+                    class="col-span-1 md:col-span-6 flex flex-row gap-4 justify-between items-end md:justify-end md:gap-8">
+                    <!-- Status -->
+                    <div class="flex flex-col items-center gap-1">
+                        <span class="text-xs md:text-sm font-semibold">Status</span>
+                        <label class="cursor-pointer flex items-center gap-2 bg-base-200 rounded-lg p-2">
+                            <input type="checkbox" name="active" class="toggle toggle-xs md:toggle-sm toggle-success"
+                                checked />
+                            <span class="text-xs md:text-sm hidden sm:inline">Active</span>
+                        </label>
+                    </div>
+
+                    <!-- Auto-Trade -->
+                    <div class="flex flex-col items-center gap-1">
+                        <span class="text-xs md:text-sm font-semibold">Auto-Trade</span>
+                        <label class="cursor-pointer flex items-center gap-2 bg-base-200 rounded-lg p-2">
+                            <input type="checkbox" name="auto_trade"
+                                class="toggle toggle-xs md:toggle-sm toggle-primary" />
+                            <span class="text-xs md:text-sm hidden sm:inline">Enabled</span>
+                        </label>
+                    </div>
+
+                    <!-- Benchmarks -->
+                    <div class="flex flex-col items-center gap-1">
+                        <span class="text-xs md:text-sm font-semibold">Benchmarks</span>
+                        <label class="cursor-pointer flex items-center gap-2 bg-base-200 rounded-lg p-2">
+                            <input type="checkbox" name="ignore_benchmarks"
+                                class="toggle toggle-xs md:toggle-sm toggle-warning" />
+                            <span class="text-xs md:text-sm hidden sm:inline">Ignore</span>
+                        </label>
+                    </div>
                 </div>
             </div>
 
@@ -469,18 +479,21 @@
             <input type="hidden" id="edit_preset_id" name="id" value="" />
 
             <!-- Modal Actions -->
-            <div class="modal-action flex justify-between items-center w-full pt-4 border-t border-base-300">
+            <div class="modal-action flex flex-row justify-between items-center w-full pt-4 border-t border-base-300">
+                <!-- Delete Button (Left) -->
                 <div>
-                    <button type="button" id="modal-delete-btn" class="btn btn-error hidden"
+                    <button type="button" id="modal-delete-btn" class="btn btn-error btn-sm hidden"
                         onclick="deletePreset(document.getElementById('edit_preset_id').value)">
                         Delete
                     </button>
                 </div>
-                <div class="flex gap-3">
-                    <button type="button" class="btn btn-ghost" onclick="closeModal()">Cancel</button>
-                    <button type="button" id="duplicate-btn" class="btn btn-secondary hidden"
+
+                <!-- Action Buttons (Right) -->
+                <div class="flex gap-2 items-center">
+                    <button type="button" class="btn btn-ghost btn-sm" onclick="closeModal()">Cancel</button>
+                    <button type="button" id="duplicate-btn" class="btn btn-secondary btn-sm hidden"
                         onclick="duplicatePreset(document.getElementById('edit_preset_id').value)">Duplicate</button>
-                    <button type="button" id="submit-btn" class="btn btn-primary"
+                    <button type="button" id="submit-btn" class="btn btn-primary btn-sm"
                         onclick="submitPreset()">Create</button>
                 </div>
             </div>

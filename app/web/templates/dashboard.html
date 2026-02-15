@@ -2,22 +2,35 @@
 
 {% block content %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+<script
+    src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+<script src="{{ url_for('static', path='js/bet_modal.js') }}"></script>
 
 <style>
     /* Flash animations for odds changes */
     @keyframes flashGreen {
-        0% { background-color: rgba(34, 197, 94, 0.4); }
-        100% { background-color: transparent; }
-    }
+        0% {
+            background-color: rgba(34, 197, 94, 0.4);
+        }
+
+        100% {
+            background-color: transparent; }}
 
     @keyframes flashRed {
-        0% { background-color: rgba(239, 68, 68, 0.4); }
-        100% { background-color: transparent; }
+        0% {
+            background-color: rgba(239, 68, 68, 0.4);
+        }
+
+        100% {
+            background-color: transparent; }}
+
+    .flash-increase {
+        animation: flashGreen 1.5s ease-out;
     }
 
-    .flash-increase { animation: flashGreen 1.5s ease-out; }
-    .flash-decrease { animation: flashRed 1.5s ease-out; }
+    .flash-decrease {
+        animation: flashRed 1.5s ease-out;
+    }
 
     .pulse-dot {
         width: 12px;
@@ -42,25 +55,15 @@
             transform: scale(0.95);
             box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7);
         }
+
         70% {
             transform: scale(1);
             box-shadow: 0 0 0 10px rgba(34, 197, 94, 0);
         }
+
         100% {
             transform: scale(0.95);
-            box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
-        }
-    }
-
-    .widget-container {
-        max-width: 300px;
-    }
-
-    @media (max-width: 768px) {
-        .widget-container {
-            max-width: 100%;
-        }
-    }
+            box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }}
 </style>
 
 <div class="w-full px-4 md:px-6 max-w-7xl mx-auto">
@@ -70,13 +73,13 @@
 
     <!-- Widgets Grid: 2 columns on desktop, 1 on mobile -->
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-        
+
         <!-- Widget 1: My Bet Stats -->
-        <div class="widget-container">
-            <div class="card bg-base-100 shadow-xl">
-                <div class="card-body p-4">
+        <div class="widget-container h-full">
+            <div class="card bg-base-100 shadow-xl h-full">
+                <div class="card-body p-4 flex flex-col">
                     <h3 class="card-title text-lg mb-3">My Bet Stats</h3>
-                    
+
                     <div class="flex flex-col gap-2 mb-3">
                         <div class="stat p-2 bg-base-200 rounded-lg">
                             <div class="stat-title text-xs">Total Bets</div>
@@ -96,7 +99,7 @@
                         <canvas id="widgetBankrollChart"></canvas>
                     </div>
 
-                    <div class="card-actions justify-end mt-2">
+                    <div class="card-actions justify-end mt-auto">
                         <a href="/analytics" class="btn btn-sm btn-ghost">View Analytics →</a>
                     </div>
                 </div>
@@ -104,18 +107,18 @@
         </div>
 
         <!-- Widget 2: Next 5 Upcoming Fixtures -->
-        <div class="widget-container">
-            <div class="card bg-base-100 shadow-xl">
-                <div class="card-body p-4">
+        <div class="widget-container h-full">
+            <div class="card bg-base-100 shadow-xl h-full">
+                <div class="card-body p-4 flex flex-col">
                     <h3 class="card-title text-lg mb-3">Upcoming Fixtures</h3>
-                    
-                    <div id="fixtures-list" class="space-y-2 max-h-[300px] overflow-y-auto">
+
+                    <div id="fixtures-list" class="space-y-2 max-h-[380px] flex-grow overflow-y-auto">
                         <div class="flex justify-center py-4">
                             <span class="loading loading-spinner loading-md"></span>
                         </div>
                     </div>
 
-                    <div class="card-actions justify-end mt-2">
+                    <div class="card-actions justify-end mt-auto">
                         <a href="/fixtures" class="btn btn-sm btn-ghost">View All →</a>
                     </div>
                 </div>
@@ -126,38 +129,47 @@
     <!-- Full Width Trade Feed Widget -->
     {% if first_preset %}
     <div class="card bg-base-100 shadow-xl">
-        <div class="card-body p-4">
-            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
-                <div class="flex items-center gap-3">
-                    <div id="ws-indicator" class="pulse-dot status-disconnected tooltip tooltip-right cursor-help" data-tip="Connecting..."></div>
-                    <h3 class="text-xl font-bold">Trade Feed</h3>
-                </div>
-                
-                <!-- Preset Dropdown -->
-                <div class="dropdown dropdown-end">
-                    <label tabindex="0" class="btn btn-sm btn-outline">
-                        <span id="selected-preset-name">{{ first_preset.name }}</span>
-                        <svg class="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
-                        </svg>
-                    </label>
-                    <ul tabindex="0" class="dropdown-content z-[10] menu p-2 shadow bg-base-100 rounded-box w-52 max-h-60 overflow-y-auto">
-                        {% for preset in presets %}
-                        <li>
-                            <a onclick="changePreset({{ preset.id }}, this.getAttribute('data-name'))" data-name="{{ preset.name | escape }}">{{ preset.name }}</a>
-                        </li>
-                        {% endfor %}
-                    </ul>
+        <div class="card-body p-0">
+            <!-- Widget Header with Padding -->
+            <div class="p-4 md:p-6 pb-0 md:pb-0">
+                <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
+                    <div class="flex items-center gap-3">
+                        <div id="ws-indicator" class="pulse-dot status-disconnected tooltip tooltip-right cursor-help"
+                            data-tip="Connecting..."></div>
+                        <h3 class="text-xl font-bold">Trade Feed</h3>
+                    </div>
+
+                    <!-- Preset Dropdown -->
+                    <div class="dropdown">
+                        <label tabindex="0" class="btn btn-sm btn-outline">
+                            <span id="selected-preset-name">{{ first_preset.name }}</span>
+                            <svg class="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M19 9l-7 7-7-7">
+                                </path>
+                            </svg>
+                        </label>
+                        <ul tabindex="0"
+                            class="dropdown-content z-[10] menu p-2 shadow bg-base-100 rounded-box w-52 max-h-60 overflow-y-auto">
+                            {% for preset in presets %}
+                            {% set p_config = preset.other_config or {} %}
+                            <li>
+                                <a onclick="changePreset({{ preset.id }}, this.getAttribute('data-name'), '{{ p_config.get('sort_by', 'edge') }}', '{{ p_config.get('sort_order', 'desc') }}', {{ preset.default_stake or 10 }}, '{{ preset.after_trade_action or 'none' }}')"
+                                    data-name="{{ preset.name | escape }}">{{ preset.name }}</a>
+                            </li>
+                            {% endfor %}
+                        </ul>
+                    </div>
                 </div>
             </div>
 
-            <!-- Trade Feed Table (scrollable, max height) -->
-            <div class="overflow-x-auto max-h-[500px] overflow-y-auto border border-base-300 rounded-lg">
+            <!-- Trade Feed Table (Full Width) -->
+            <div class="overflow-x-auto max-h-[500px] overflow-y-auto border-y border-base-300">
                 <table class="table table-sm w-full" id="trade-table">
                     <thead class="sticky top-0 bg-base-200 z-10">
                         <tr class="text-xs">
-                            <th class="px-2">Time</th>
-                            <th class="px-2">Market</th>
+                            <th class="px-2 md:px-4">Time</th>
+                            <th class="px-2 md:px-4">Market</th>
                             <th class="px-2 text-center">Odds</th>
                             <th class="px-2 text-center">Prob</th>
                             <th class="px-2 text-center">Edge</th>
@@ -166,7 +178,7 @@
                     </thead>
                     <tbody id="trade-feed-body">
                         <tr>
-                            <td colspan="5" class="text-center py-10">
+                            <td colspan="6" class="text-center py-10">
                                 <span class="loading loading-spinner loading-lg"></span>
                                 <div class="mt-2 text-gray-500">Waiting for data...</div>
                             </td>
@@ -175,8 +187,10 @@
                 </table>
             </div>
 
-            <div class="mt-3 text-xs opacity-70 text-right">
-                <a href="/trade-feed?preset_id={{ first_preset.id }}" class="link">View Full Trade Feed →</a>
+            <!-- Widget Footer with Padding -->
+            <div class="p-4 md:p-6 pt-2 md:pt-2 text-right">
+                <a href="/trade-feed?preset_id={{ first_preset.id }}" class="link text-xs opacity-70">View Full Trade
+                    Feed →</a>
             </div>
         </div>
     </div>
@@ -185,20 +199,29 @@
 
 <script>
     let widgetChartInstance = null;
-    let currentPresetId = {% if first_preset %}{{ first_preset.id }}{% else %}null{% endif %};
+    window.currentPresetId = {% if first_preset %}{{ first_preset.id }} {% else %} null{% endif %};
+    window.currentDefaultStake = {% if first_preset %}{{ first_preset.default_stake or 10 }} {% else %} 10{% endif %};
+    window.currentPresetAfterTradeAction = {% if first_preset %}'{{ first_preset.after_trade_action or 'none' }}'{% else %} 'none'{% endif %};
     let websocket = null;
     let reconnectTimeout = null;
     let previousOdds = {}; // Track odds for flash animations
+
+    // Sort config
+    let sortCol = 'edge';
+    let sortDir = 'desc';
+    {% if first_preset %}
+    const initialConfig = {{ (first_preset.other_config or {}) | tojson | safe }};
+    sortCol = initialConfig.sort_by || 'edge';
+    sortDir = initialConfig.sort_order || 'desc';
+    {% endif %}
 
     document.addEventListener('DOMContentLoaded', () => {
         initWidgetChart();
         loadBetStats();
         loadUpcomingFixtures();
-        
+
         if (currentPresetId) {
-            connectWebSocket(currentPresetId);
-        }
-    });
+            connectWebSocket(currentPresetId); }});
 
     function initWidgetChart() {
         const ctx = document.getElementById('widgetBankrollChart').getContext('2d');
@@ -227,83 +250,71 @@
                             tooltipFormat: 'PP'
                         },
                         grid: { color: 'rgba(255, 255, 255, 0.05)' },
-                        ticks: { maxTicksLimit: 5 }
-                    },
+                        ticks: { maxTicksLimit: 5 }},
                     y: {
                         grid: { color: 'rgba(255, 255, 255, 0.05)' },
-                        ticks: { maxTicksLimit: 5 }
-                    }
+                        ticks: { maxTicksLimit: 5 }}
                 },
                 plugins: {
                     legend: { display: false },
                     tooltip: {
                         callbacks: {
-                            label: function(context) {
-                                return 'Balance: ' + context.parsed.y.toFixed(2);
-                            }
-                        }
-                    }
-                }
-            }
-        });
+                            label: function (context) {
+                                return 'Balance: ' + context.parsed.y.toFixed(2); }}}}}});
     }
 
     async function loadBetStats() {
         try {
             const response = await fetch('/api/dashboard/bet-stats');
             if (!response.ok) return;
-            
+
             const data = await response.json();
-            
+
             document.getElementById('widget-total-bets').textContent = data.total_bets;
-            
+
             const roiEl = document.getElementById('widget-roi');
             roiEl.textContent = data.roi.toFixed(1) + '%';
             roiEl.classList.remove('text-success', 'text-error');
             roiEl.classList.add(data.roi >= 0 ? 'text-success' : 'text-error');
-            
+
             document.getElementById('widget-win-rate').textContent = data.win_rate.toFixed(1) + '%';
-            
+
             if (widgetChartInstance) {
                 widgetChartInstance.data.datasets[0].data = data.chart_data;
-                widgetChartInstance.update();
-            }
-        } catch (e) {
-            console.error('Failed to load bet stats:', e);
-        }
-    }
+                widgetChartInstance.update(); }} catch (e) {
+            console.error('Failed to load bet stats:', e); }}
 
     async function loadUpcomingFixtures() {
         try {
             const response = await fetch('/api/dashboard/upcoming-fixtures');
             if (!response.ok) return;
-            
+
             const fixtures = await response.json();
             const container = document.getElementById('fixtures-list');
-            
+
             if (fixtures.length === 0) {
                 container.innerHTML = '<div class="text-center py-4 text-sm opacity-70">No upcoming fixtures</div>';
                 return;
             }
-            
+
             // Helper function to escape HTML
             function escapeHtml(text) {
                 const div = document.createElement('div');
                 div.textContent = text;
                 return div.innerHTML;
             }
-            
+
             container.innerHTML = fixtures.map(fixture => {
                 const date = new Date(fixture.commence_time);
                 const isLive = fixture.is_live;
-                const timeStr = isLive ? 'LIVE' : date.toLocaleString('en-US', { 
-                    month: 'short', 
-                    day: 'numeric', 
-                    hour: '2-digit', 
-                    minute: '2-digit' 
+                const timeStr = isLive ? 'LIVE' : date.toLocaleString('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
                 });
                 const gmtTime = fixture.commence_time_utc || '';
-                
+
                 return `
                     <div class="p-2 bg-base-200 rounded-lg hover:bg-base-300 transition-colors">
                         <div class="flex justify-between items-start text-xs">
@@ -322,17 +333,20 @@
                 `;
             }).join('');
         } catch (e) {
-            console.error('Failed to load fixtures:', e);
-        }
-    }
+            console.error('Failed to load fixtures:', e); }}
 
-    function changePreset(presetId, presetName) {
-        currentPresetId = presetId;
+    function changePreset(presetId, presetName, newSortCol, newSortDir, newDefaultStake, newAfterTradeAction) {
+        window.currentPresetId = presetId;
         document.getElementById('selected-preset-name').textContent = presetName;
-        
+
+        if (newSortCol) sortCol = newSortCol;
+        if (newSortDir) sortDir = newSortDir;
+        if (newDefaultStake) window.currentDefaultStake = parseFloat(newDefaultStake);
+        if (newAfterTradeAction) window.currentPresetAfterTradeAction = newAfterTradeAction;
+
         // Close the dropdown
         document.activeElement.blur();
-        
+
         // Reconnect websocket
         if (websocket) {
             websocket.close();
@@ -343,54 +357,50 @@
     function connectWebSocket(presetId) {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${protocol}//${window.location.host}/ws/tradefeed/${presetId}`;
-        
+
         websocket = new WebSocket(wsUrl);
-        
+
         websocket.onopen = () => {
             console.log('WebSocket connected');
             const indicator = document.getElementById('ws-indicator');
             indicator.classList.remove('status-disconnected');
             indicator.classList.add('status-connected');
             indicator.setAttribute('data-tip', 'Connected');
-            
+
             clearTimeout(reconnectTimeout);
         };
-        
+
         websocket.onmessage = (event) => {
             try {
                 const data = JSON.parse(event.data);
                 updateTradeFeed(data);
             } catch (e) {
-                console.error('Failed to parse WebSocket message:', e);
-            }
-        };
-        
+                console.error('Failed to parse WebSocket message:', e); }};
+
         websocket.onerror = (error) => {
             console.error('WebSocket error:', error);
         };
-        
+
         websocket.onclose = () => {
             console.log('WebSocket disconnected');
             const indicator = document.getElementById('ws-indicator');
             indicator.classList.remove('status-connected');
             indicator.classList.add('status-disconnected');
             indicator.setAttribute('data-tip', 'Disconnected - Reconnecting...');
-            
+
             // Attempt to reconnect after 3 seconds
             reconnectTimeout = setTimeout(() => {
-                if (currentPresetId) {
-                    connectWebSocket(currentPresetId);
-                }
-            }, 3000);
+                if (window.currentPresetId) {
+                    connectWebSocket(window.currentPresetId); }}, 3000);
         };
     }
 
     function updateTradeFeed(data) {
         const tbody = document.getElementById('trade-feed-body');
-        
+
         // WebSocket sends 'opportunities', not 'odds'
         const opportunities = data.opportunities || [];
-        
+
         if (opportunities.length === 0) {
             tbody.innerHTML = `
                 <tr>
@@ -401,67 +411,84 @@
             `;
             return;
         }
-        
+
         // Helper function to escape HTML
         function escapeHtml(text) {
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
         }
-        
-        // Sort by edge (highest first)
-        const sortedOdds = [...opportunities].sort((a, b) => b.edge - a.edge);
-        
+
+        // Dynamic sorting based on preset config
+        const sortedOdds = [...opportunities].sort((a, b) => {
+            let valA = a[sortCol];
+            let valB = b[sortCol];
+
+            // Handle case-insensitive string compare
+            if (typeof valA === 'string') valA = valA.toLowerCase();
+            if (typeof valB === 'string') valB = valB.toLowerCase();
+
+            // Handle nulls
+            if (valA === null && valB === null) return 0;
+            if (valA === null) return 1;
+            if (valB === null) return -1;
+
+            if (valA < valB) return sortDir === 'asc' ? -1 : 1;
+            if (valA > valB) return sortDir === 'asc' ? 1 : -1;
+            return 0;
+        });
+
         // Take top 20 for dashboard
         const displayOdds = sortedOdds.slice(0, 20);
-        
+
         tbody.innerHTML = displayOdds.map(odd => {
             // Use start_time instead of event_commence_time
             const eventTime = new Date(odd.start_time);
-            const dateStr = eventTime.toLocaleString('en-US', { 
-                month: 'short', 
+            const dateStr = eventTime.toLocaleString('en-US', {
+                month: 'short',
                 day: 'numeric'
             });
-            const timeStr = eventTime.toLocaleString('en-US', { 
-                hour: '2-digit', 
-                minute: '2-digit' 
+            const timeStr = eventTime.toLocaleString('en-US', {
+                hour: '2-digit',
+                minute: '2-digit'
             });
             const gmtTime = eventTime.toISOString().replace('T', ' ').substring(0, 16) + ' UTC';
-            
+
             // Check for odds change
             const oddKey = `${odd.event_id}_${odd.bookmaker_key}_${odd.market}_${odd.selection}`;
             const prevPrice = previousOdds[oddKey];
             let flashClass = '';
-            
+
             if (prevPrice !== undefined && prevPrice != odd.price) {
                 flashClass = odd.price > prevPrice ? 'flash-increase' : 'flash-decrease';
             }
             previousOdds[oddKey] = odd.price;
-            
-            // Calculate edge from true_odds if available
-            const edge = odd.true_odds ? ((odd.price / odd.true_odds - 1) * 100) : odd.edge;
-            const edgeColor = edge > 0 ? 'text-success' : 'text-error';
-            
+
+            // Calculate edge display
+            const edgePercentage = odd.edge !== null ? (odd.edge * 100) : null;
+            const edgeColor = (edgePercentage !== null && edgePercentage > 0) ? 'text-success' : 'text-error';
+            const edgeDisplay = edgePercentage !== null ? ((edgePercentage > 0 ? '+' : '') + edgePercentage.toFixed(1) + '%') : '-';
+
             // Calculate probability (round to whole number)
             const probability = odd.implied_probability ? Math.round(odd.implied_probability * 100) : Math.round((1 / odd.price) * 100);
-            
+
             // Format selection with capitalization and point
             const selectionDisplay = odd.selection.charAt(0).toUpperCase() + odd.selection.slice(1).toLowerCase();
             const pointDisplay = odd.point !== null && odd.point !== undefined ? ` (${odd.point > 0 ? '+' : ''}${odd.point})` : '';
             const fullSelection = `${selectionDisplay}${pointDisplay}`;
-            
+
             // Market key uppercase
             const marketUpper = odd.market.toUpperCase();
-            
+
             // Prepare item data for modal
             const itemJson = JSON.stringify(odd).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-            
+
             return `
                 <tr class="text-xs hover:bg-base-200 cursor-pointer" onclick='openBetModal(${itemJson})'>
                     <td class="px-2 whitespace-nowrap">
                         <div class="tooltip tooltip-right" data-tip="${escapeHtml(gmtTime)}">
-                            <div>${escapeHtml(dateStr)}</div>
-                            <div class="opacity-70">${escapeHtml(timeStr)}</div>
+                            <div class="text-[10px] md:text-sm">${escapeHtml(dateStr)}</div>
+                            <div class="opacity-70 text-[9px] md:text-xs">${escapeHtml(timeStr)}</div>
                         </div>
                     </td>
                     <td class="px-2">
@@ -470,7 +497,7 @@
                     </td>
                     <td class="px-2 text-center font-mono text-info ${flashClass}">${Number(odd.price).toFixed(2)}</td>
                     <td class="px-2 text-center font-mono opacity-70">${probability}%</td>
-                    <td class="px-2 text-center font-mono ${edgeColor}">${edge > 0 ? '+' : ''}${Number(edge).toFixed(1)}%</td>
+                    <td class="px-2 text-center font-mono ${edgeColor}">${edgeDisplay}</td>
                     <td class="px-2 text-center">
                         <button class="btn btn-xs btn-primary" onclick="event.stopPropagation(); openBetModal(${itemJson})">Bet</button>
                     </td>
@@ -483,185 +510,10 @@
     setInterval(loadBetStats, 60000); // Every minute
     setInterval(loadUpcomingFixtures, 60000); // Every minute
 
-    // Bet Modal Functions
-    function openBetModal(item) {
-        // Store all data in hidden fields
-        document.getElementById('modal-event-id').value = item.event_id;
-        document.getElementById('modal-home').value = item.home;
-        document.getElementById('modal-away').value = item.away;
-        document.getElementById('modal-sport').value = item.sport;
-        document.getElementById('modal-league').value = item.league;
-        document.getElementById('modal-market').value = item.market;
-        document.getElementById('modal-selection').value = item.selection;
-        document.getElementById('modal-bookmaker').value = item.bookmaker;
-        document.getElementById('modal-bookmaker-key').value = item.bookmaker_key;
-        document.getElementById('modal-odds').value = item.price.toFixed(2);
-        document.getElementById('modal-true-odds').value = item.true_odds || item.price;
-        document.getElementById('modal-point').value = item.point || '';
-        document.getElementById('modal-url').value = item.url || '';
-        document.getElementById('modal-start-time-val').value = item.start_time;
-
-        // Probability from true odds (benchmark), if true odds, else use current odds
-        const trueProbability = item.true_odds ? (1 / item.true_odds * 100).toFixed(2) : (1 / item.price * 100).toFixed(2);
-        document.getElementById('modal-probability').value = trueProbability;
-        document.getElementById('modal-prob-display').textContent = `${trueProbability}%`;
-
-        // Populate visible fields
-        document.getElementById('modal-home-display').textContent = item.home;
-        document.getElementById('modal-away-display').textContent = item.away;
-        document.getElementById('modal-league-short').textContent = item.league;
-
-        // Format market + selection (include point if available)
-        const selectionName = item.selection_name || item.selection;
-        const selectionNorm = item.selection.charAt(0).toUpperCase() + item.selection.slice(1).toLowerCase();
-        const marketKey = item.market.toUpperCase();
-        const pointDisplay = item.point !== null && item.point !== undefined ? ` (${item.point > 0 ? '+' : ''}${item.point})` : '';
-        document.getElementById('modal-market-selection').textContent = `${selectionName}${pointDisplay} (${selectionNorm}) - ${marketKey}`;
-
-        document.getElementById('modal-bookmaker-name').textContent = item.bookmaker;
-
-        // Handle Link
-        const linkBtn = document.getElementById('modal-bookmaker-link');
-        if (item.url) {
-            linkBtn.href = item.url;
-            linkBtn.classList.remove('hidden');
-        } else {
-            linkBtn.classList.add('hidden');
-        }
-
-        // Time display - simple format for dashboard
-        const timeDate = new Date(item.start_time);
-        const timeDisplay = timeDate.toLocaleString('en-US', { 
-            month: 'short', 
-            day: 'numeric', 
-            hour: '2-digit', 
-            minute: '2-digit' 
-        });
-        document.getElementById('modal-time-text').textContent = timeDisplay;
-
-        // Initialize Stake
-        const defaultStake = 10;
-        document.getElementById('modal-stake').value = defaultStake;
-
-        recalculateEdge();
-        document.getElementById('bet-modal').showModal();
-    }
-
-    function recalculateEdge() {
-        const price = parseFloat(document.getElementById('modal-odds').value);
-        const trueOdds = parseFloat(document.getElementById('modal-true-odds').value);
-
-        if (price && trueOdds) {
-            const edge = ((price / trueOdds - 1) * 100).toFixed(2);
-            document.getElementById('modal-edge').textContent = `${edge}%`;
-        }
-    }
-
-    async function submitBet() {
-        const data = {
-            event_id: document.getElementById('modal-event-id').value,
-            home: document.getElementById('modal-home').value,
-            away: document.getElementById('modal-away').value,
-            sport: document.getElementById('modal-sport').value,
-            league: document.getElementById('modal-league').value,
-            market_key: document.getElementById('modal-market').value,
-            selection: document.getElementById('modal-selection').value,
-            bookmaker: document.getElementById('modal-bookmaker').value,
-            bookmaker_key: document.getElementById('modal-bookmaker-key').value,
-            price: parseFloat(document.getElementById('modal-odds').value),
-            stake: parseFloat(document.getElementById('modal-stake').value),
-            point: document.getElementById('modal-point').value || null,
-            url: document.getElementById('modal-url').value || null,
-            start_time: document.getElementById('modal-start-time-val').value,
-            preset_id: parseInt(document.getElementById('modal-preset-id').value)
-        };
-
-        try {
-            const response = await fetch('/bets', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data)
-            });
-
-            if (response.ok) {
-                document.getElementById('bet-modal').close();
-                alert('Trade registered successfully!');
-            } else {
-                const error = await response.json();
-                alert(`Error: ${error.detail || 'Failed to register trade'}`);
-            }
-        } catch (e) {
-            alert(`Error: ${e.message}`);
-        }
-    }
+    // Bet Modal Functions removed - now in static/js/bet_modal.js
 </script>
 
 <!-- Betting Modal -->
-<dialog id="bet-modal" class="modal">
-    <div class="modal-box max-w-md">
-        <div class="flex justify-between items-start mb-3">
-            <div class="flex-1">
-                <div class="flex items-center gap-2 text-base font-semibold">
-                    <span id="modal-home-display"></span>
-                    <span class="opacity-50">vs</span>
-                    <span id="modal-away-display"></span>
-                </div>
-                <div class="flex items-center gap-2 text-xs opacity-60 mt-1">
-                    <span id="modal-league-short"></span>
-                    <span class="opacity-50">•</span>
-                    <span id="modal-time-text"></span>
-                </div>
-            </div>
-            <button onclick="document.getElementById('bet-modal').close()" class="btn btn-sm btn-ghost btn-circle">✕</button>
-        </div>
-        <div class="text-center mb-6">
-            <h3 class="text-lg font-bold text-info" id="modal-market-selection"></h3>
-        </div>
-        <div class="grid grid-cols-3 gap-2 mb-6">
-            <div class="text-center">
-                <div class="text-xs opacity-60 uppercase mb-1">Odds</div>
-                <input type="number" step="0.01" id="modal-odds" class="input input-bordered input-sm w-full text-center font-bold" oninput="recalculateEdge()" />
-            </div>
-            <div class="text-center">
-                <div class="text-xs opacity-60 uppercase mb-1">Prob</div>
-                <div class="font-bold text-lg" id="modal-prob-display"></div>
-            </div>
-            <div class="text-center">
-                <div class="text-xs opacity-60 uppercase mb-1">Edge</div>
-                <div class="font-bold text-lg text-success" id="modal-edge"></div>
-            </div>
-        </div>
-        <div class="text-center text-sm opacity-70 mb-4 flex items-center justify-center gap-2">
-            Place this trade with <span id="modal-bookmaker-name" class="font-semibold"></span>
-            <a id="modal-bookmaker-link" href="#" target="_blank" class="hidden btn btn-ghost btn-xs btn-circle p-0 h-6 w-6">
-                <svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
-                </svg>
-            </a>
-        </div>
-        <div class="mb-6">
-            <div class="relative flex items-center">
-                <input type="number" step="0.01" id="modal-stake" class="input input-bordered input-lg w-full text-center text-2xl pr-16" value="10" />
-                <span class="absolute right-4 text-base opacity-50 bg-base-100 px-2">EUR</span>
-            </div>
-        </div>
-        <button class="btn btn-primary btn-block btn-lg" onclick="submitBet()">REGISTER TRADE</button>
-        <input type="hidden" id="modal-event-id" />
-        <input type="hidden" id="modal-home" />
-        <input type="hidden" id="modal-away" />
-        <input type="hidden" id="modal-sport" />
-        <input type="hidden" id="modal-league" />
-        <input type="hidden" id="modal-market" />
-        <input type="hidden" id="modal-selection" />
-        <input type="hidden" id="modal-bookmaker" />
-        <input type="hidden" id="modal-bookmaker-key" />
-        <input type="hidden" id="modal-true-odds" />
-        <input type="hidden" id="modal-probability" />
-        <input type="hidden" id="modal-point" />
-        <input type="hidden" id="modal-url" />
-        <input type="hidden" id="modal-start-time-val" />
-        <input type="hidden" id="modal-preset-id" value="{{ first_preset.id if first_preset else '' }}" />
-    </div>
-</dialog>
+{% include 'components/bet_modal.html' %}
 
 {% endblock %}
