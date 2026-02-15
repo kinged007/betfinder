@@ -1,6 +1,8 @@
 {% extends "base.html" %}
 
 {% block content %}
+<script src="{{ url_for('static', path='js/bet_modal.js') }}"></script>
+
 <style>
     /* Flash animations for odds changes */
     @keyframes flashGreen {
@@ -142,123 +144,7 @@
         </div>
     </div>
 
-    <!-- Betting Popup Dialog -->
-    <dialog id="bet-modal" class="modal">
-        <div class="modal-box max-w-md">
-            <!-- Header -->
-            <div class="flex justify-between items-start mb-3">
-                <div class="flex-1">
-                    <div class="flex items-center gap-2 text-base font-semibold">
-                        <span id="modal-home-display"></span>
-                        <button onclick="copyToClipboard('modal-home')"
-                            class="btn btn-xs btn-ghost p-0 h-auto min-h-0 opacity-40 hover:opacity-100"
-                            title="Copy Home Team">
-                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2">
-                                </path>
-                            </svg>
-                        </button>
-                        <span class="opacity-50">vs</span>
-                        <span id="modal-away-display"></span>
-                        <button onclick="copyToClipboard('modal-away')"
-                            class="btn btn-xs btn-ghost p-0 h-auto min-h-0 opacity-40 hover:opacity-100"
-                            title="Copy Away Team">
-                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2">
-                                </path>
-                            </svg>
-                        </button>
-                    </div>
-                    <div class="flex items-center gap-2 text-xs opacity-60 mt-1">
-                        <span id="modal-league-short"></span>
-                        <span class="opacity-50">•</span>
-                        <span id="modal-start-time" class="flex items-center gap-1">
-                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                            </svg>
-                            <span id="modal-time-text"></span>
-                        </span>
-                    </div>
-                </div>
-                <button onclick="document.getElementById('bet-modal').close()"
-                    class="btn btn-sm btn-ghost btn-circle">✕</button>
-            </div>
-
-            <!-- Market/Selection Display -->
-            <div class="text-center mb-6">
-                <h3 class="text-lg font-bold text-info" id="modal-market-selection"></h3>
-            </div>
-
-            <!-- Three Column Stats -->
-            <div class="grid grid-cols-3 gap-2 mb-6">
-                <div class="text-center">
-                    <div class="text-xs opacity-60 uppercase mb-1">Odds</div>
-                    <input type="number" step="0.01" id="modal-odds"
-                        class="input input-bordered input-sm w-full text-center font-bold"
-                        oninput="recalculateEdge()" />
-                </div>
-                <div class="text-center">
-                    <div class="text-xs opacity-60 uppercase mb-1">Prob</div>
-                    <div class="font-bold text-lg" id="modal-prob-display"></div>
-                </div>
-                <div class="text-center">
-                    <div class="text-xs opacity-60 uppercase mb-1">Edge</div>
-                    <div class="font-bold text-lg text-success" id="modal-edge"></div>
-                </div>
-            </div>
-
-            <!-- Bookmaker Info -->
-            <div class="text-center text-sm opacity-70 mb-4 flex items-center justify-center gap-2">
-                Place this trade with <span id="modal-bookmaker-name" class="font-semibold"></span>
-                <a id="modal-bookmaker-link" href="#" target="_blank"
-                    class="hidden btn btn-ghost btn-xs btn-circle p-0 h-6 w-6" title="Open Bookmaker">
-                    <svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
-                    </svg>
-                </a>
-            </div>
-
-            <!-- Stake Input -->
-            <div class="mb-6">
-                <div class="relative flex items-center">
-                    <input type="number" step="0.01" id="modal-stake"
-                        class="input input-bordered input-lg w-full text-center text-2xl pr-16" value="10" />
-                    <span class="absolute right-4 text-base opacity-50 bg-base-100 px-2">EUR</span>
-                </div>
-            </div>
-
-            <!-- Register Button -->
-            <button class="btn btn-primary btn-block btn-lg" onclick="submitBet()">
-                REGISTER TRADE
-            </button>
-
-            <!-- Hidden fields -->
-            <input type="hidden" id="modal-event-id" />
-            <input type="hidden" id="modal-home" />
-            <input type="hidden" id="modal-away" />
-            <input type="hidden" id="modal-sport" />
-            <input type="hidden" id="modal-league" />
-            <input type="hidden" id="modal-market" />
-            <input type="hidden" id="modal-selection" />
-            <input type="hidden" id="modal-bookmaker" />
-            <input type="hidden" id="modal-true-odds" />
-            <input type="hidden" id="modal-probability" />
-            <input type="hidden" id="modal-point" />
-            <input type="hidden" id="modal-url" />
-            <input type="hidden" id="modal-start-time" />
-
-            <!-- Real values for clipboard -->
-            <input type="hidden" id="modal-home" />
-            <input type="hidden" id="modal-away" />
-        </div>
-        <form method="dialog" class="modal-backdrop">
-            <button>close</button>
-        </form>
-    </dialog>
+    {% include 'components/bet_modal.html' %}
 
     <style>
         .active-group {
@@ -339,11 +225,16 @@
 
     <script>
         const presetId = "{{ current_preset.id }}";
+        window.currentPresetId = presetId;
+        window.currentPresetDefaultStake = "{{ current_preset.default_stake or 10 }}";
+        window.currentPresetAfterTradeAction = "{{ current_preset.after_trade_action or 'none' }}";
+
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const ws = new WebSocket(`${protocol}//${window.location.host}/ws/tradefeed/${presetId}`);
         const tbody = document.getElementById("trade-feed-body");
         const indicator = document.getElementById('ws-indicator');
-        let lastData = [];
+        window.lastData = []; // Expose globally for bet_modal.js
+        window.renderData = renderData; // Expose globally
 
         // Config from preset
         const otherConfig = {{ (current_preset.other_config or { }) | tojson | safe }};
@@ -735,159 +626,9 @@
             }
         }
 
-        function openBetModal(item) {
-            // Store all data in hidden fields
-            document.getElementById('modal-event-id').value = item.event_id;
-            document.getElementById('modal-home').value = item.home;
-            document.getElementById('modal-away').value = item.away;
-            document.getElementById('modal-sport').value = item.sport;
-            document.getElementById('modal-league').value = item.league;
-            document.getElementById('modal-market').value = item.market;
-            document.getElementById('modal-selection').value = item.selection;
-            document.getElementById('modal-bookmaker').value = item.bookmaker;
-            document.getElementById('modal-odds').value = item.price.toFixed(2);
-            document.getElementById('modal-true-odds').value = item.true_odds;
-            document.getElementById('modal-point').value = item.point;
-            document.getElementById('modal-url').value = item.url || '';
-            document.getElementById('modal-start-time').value = item.start_time;
 
-            // Probability from true odds (benchmark - doesn't change), if true odds, else use current odds
-            const trueProbability = item.true_odds ? (1 / item.true_odds * 100).toFixed(2) : (1 / item.price * 100).toFixed(2);
-            document.getElementById('modal-probability').value = trueProbability;
-            document.getElementById('modal-prob-display').textContent = `${trueProbability}%`;
+        // Bet Modal Functions removed - now in static/js/bet_modal.js
 
-            // Populate visible fields
-            document.getElementById('modal-home-display').textContent = item.home;
-            document.getElementById('modal-away-display').textContent = item.away;
-            document.getElementById('modal-league-short').textContent = item.league;
-
-            // Format market + selection (include point if available)
-            const selectionName = item.selection_name;
-            const selectionNorm = item.selection.charAt(0).toUpperCase() + item.selection.slice(1).toLowerCase();
-            const marketKey = item.market.toUpperCase();
-            const pointDisplay = item.point !== null ? ` (${item.point > 0 ? '+' : ''}${item.point})` : '';
-            document.getElementById('modal-market-selection').textContent = `${selectionName} (${selectionNorm})${pointDisplay} - ${marketKey}`;
-
-            document.getElementById('modal-bookmaker-name').textContent = item.bookmaker;
-
-            // Handle Link
-            const linkBtn = document.getElementById('modal-bookmaker-link');
-            if (item.url) {
-                linkBtn.href = item.url;
-                linkBtn.classList.remove('hidden');
-            } else {
-                linkBtn.classList.add('hidden');
-            }
-
-            // Time display
-            const timeDisplay = window.formatLocalTime(item.start_time);
-            document.getElementById('modal-time-text').innerHTML = timeDisplay;
-
-            // Initialize Stake from preset
-            const defaultStake = parseFloat("{{ current_preset.default_stake }}") || 10;
-            document.getElementById('modal-stake').value = defaultStake;
-
-            recalculateEdge();
-            document.getElementById('bet-modal').showModal();
-        }
-
-        async function copyToClipboard(fieldId) {
-            const val = document.getElementById(fieldId).value;
-            try {
-                await navigator.clipboard.writeText(val);
-                // Optional: show a mini toast or feedback
-            } catch (err) {
-                // Fallback for older browsers
-                const input = document.getElementById(fieldId);
-                input.select();
-                document.execCommand('copy');
-            }
-        }
-
-        function recalculateEdge() {
-            const price = parseFloat(document.getElementById('modal-odds').value);
-            const trueOdds = parseFloat(document.getElementById('modal-true-odds').value);
-
-            if (price && trueOdds) {
-                // Edge calculation only (probability stays constant from true odds)
-                const edge = ((price / trueOdds - 1) * 100).toFixed(2);
-                document.getElementById('modal-edge').textContent = `${edge}%`;
-            }
-        }
-
-        async function submitBet() {
-            const betData = {
-                event_id: document.getElementById('modal-event-id').value,
-                bookmaker: document.getElementById('modal-bookmaker').value,
-                market: document.getElementById('modal-market').value,
-                selection: document.getElementById('modal-selection').value,
-                price: parseFloat(document.getElementById('modal-odds').value),
-                stake: parseFloat(document.getElementById('modal-stake').value),
-                true_odds: parseFloat(document.getElementById('modal-true-odds').value),
-                preset_id: parseInt(presetId)
-            };
-
-            try {
-                const response = await fetch('/trade-feed/bet', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(betData)
-                });
-
-                if (response.ok) {
-                    showToast('Trade registered successfully!', 'success');
-                    document.getElementById('bet-modal').close();
-
-                    const afterTradeAction = "{{ current_preset.after_trade_action }}";
-                    if (afterTradeAction === 'keep') {
-                        // Just refresh the data to show the "Bet Placed" badge
-                        // Instead of a full reload, we can just update the flag locally
-                        const itemIdx = lastData.findIndex(d => d.event_id === betData.event_id && d.market === betData.market && d.selection === betData.selection);
-                        if (itemIdx !== -1) {
-                            lastData[itemIdx].has_bet = true;
-                            renderData(lastData);
-                        }
-                        return;
-                    }
-
-                    // For other actions, we need to hide items
-                    const startTimeStr = document.getElementById('modal-start-time').value;
-                    const startTime = new Date(startTimeStr);
-                    const expiryDate = new Date(startTime.getTime() + 24 * 60 * 60 * 1000);
-
-                    const presetPayload = {
-                        event_id: betData.event_id,
-                        expiry_at: expiryDate.toISOString()
-                    };
-
-                    if (afterTradeAction === 'remove_trade') {
-                        presetPayload.market_key = betData.market;
-                        presetPayload.selection_norm = betData.selection;
-                        lastData = lastData.filter(d => !(d.event_id === betData.event_id && d.market === betData.market && d.selection === betData.selection));
-                    } else if (afterTradeAction === 'remove_line') {
-                        presetPayload.market_key = betData.market;
-                        lastData = lastData.filter(d => !(d.event_id === betData.event_id && d.market === betData.market));
-                    } else if (afterTradeAction === 'remove_match') {
-                        // market_key remains null to hide whole event
-                        lastData = lastData.filter(d => d.event_id !== betData.event_id);
-                    }
-
-                    await fetch(`/api/v1/presets/${presetId}/hidden-items`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(presetPayload)
-                    });
-
-                    renderData(lastData);
-
-                } else {
-                    const error = await response.json();
-                    showToast(`Error: ${error.detail || 'Failed to register trade'}`, "error");
-                }
-            } catch (error) {
-                showToast(`Error: ${error.message}`, "error");
-            }
-        }
 
         function applyFlashAnimations(oddsIncreased, oddsDecreased) {
             // Apply flash-increase class to rows with increased odds
@@ -934,7 +675,10 @@
             const oddsDecreased = response.odds_decreased || [];
 
             lastData = data;
-            renderData(data);
+            if (typeof window.renderData === 'function') {
+                window.renderData(data);
+            }
+
             updateSortUI(); // Refresh UI indicators if data arrived while we had a sort set
 
             // Apply flash animations after rendering
