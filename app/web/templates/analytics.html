@@ -196,8 +196,12 @@
         <div class="card-body p-4">
             <div class="flex flex-wrap gap-6 mb-4 justify-center md:justify-start">
                 <div class="stat w-auto place-items-center md:place-items-start p-2">
-                    <div class="stat-title text-xs">Net Profit</div>
+                    <div class="stat-title text-xs">Bankroll</div>
                     <div class="stat-value text-2xl" id="stat-profit">0.00</div>
+                </div>
+                <div class="stat w-auto place-items-center md:place-items-start p-2">
+                    <div class="stat-title text-xs">Net Profit</div>
+                    <div class="stat-value text-2xl" id="stat-net-profit">0.00</div>
                 </div>
                 <div class="stat w-auto place-items-center md:place-items-start p-2">
                     <div class="stat-title text-xs">ROI</div>
@@ -446,6 +450,10 @@
             document.getElementById('stat-profit').textContent = data.stats.total_profit.toFixed(2);
             document.getElementById('stat-profit').classList.remove('text-success', 'text-error');
             document.getElementById('stat-profit').classList.add(data.stats.total_profit >= 0 ? 'text-success' : 'text-error');
+
+            document.getElementById('stat-net-profit').textContent = data.stats.net_profit.toFixed(2);
+            document.getElementById('stat-net-profit').classList.remove('text-success', 'text-error');
+            document.getElementById('stat-net-profit').classList.add(data.stats.net_profit >= 0 ? 'text-success' : 'text-error');
 
             document.getElementById('stat-roi').textContent = data.stats.roi.toFixed(1) + '%';
             document.getElementById('stat-roi').classList.remove('text-success', 'text-error');

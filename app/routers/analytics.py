@@ -135,7 +135,36 @@ async def analytics_data(
     chart_data = []
     daily_pnl = defaultdict(float)
     
-    running_balance = 0.0
+    # Calculate Starting Balance from filtered bookmakers
+    total_starting_balance = 0.0
+    
+    # We need to fetch bookmakers based on the filter (or all if no filter)
+    # Re-using the bookmaker logic from filters would be ideal, but for now let's just query.
+    # Actually, we can just query all active bookmakers if no specific filter, 
+    # or filtered ones if specified.
+    
+    bk_query = select(Bookmaker).where(Bookmaker.active == True)
+    if filters.bookmakers:
+        bk_query = bk_query.where(Bookmaker.id.in_(filters.bookmakers))
+        
+    bk_result = await db.execute(bk_query)
+    relevant_bookmakers = bk_result.scalars().all()
+    
+    for bk in relevant_bookmakers:
+        cfg = bk.config or {}
+        # User specified key 'starting_balance', default to 0
+        starting_val = cfg.get("starting_balance")
+        if starting_val is None:
+            starting = 0.0
+        else:
+            try:
+                starting = float(starting_val)
+            except (ValueError, TypeError):
+                starting = 0.0
+        total_starting_balance += starting
+
+    running_balance = total_starting_balance
+    net_pnl = 0.0
     total_staked = 0.0
     total_returned = 0.0
     
@@ -163,6 +192,7 @@ async def analytics_data(
             
         # Accumulate global stats
         running_balance += pnl
+        net_pnl += pnl
         total_staked += bet.stake
         
         # Aggregate daily PnL
@@ -174,7 +204,17 @@ async def analytics_data(
 
     # Build Chart Data from Aggregated Daily PnL
     sorted_dates = sorted(daily_pnl.keys())
-    cumulative_balance = 0.0
+    cumulative_balance = 0.0 # This should track PnL only for chart? Or Bankroll? 
+    # Current chart implementation tracks Net PnL or Bankroll?
+    # "cumulative_balance" implies starting from 0 if not initialized. 
+    # Oh wait, the previous code initialized `running_balance = total_starting_balance`.
+    # But the chart loop uses `cumulative_balance`. 
+    # If we want the chart to show Bankroll, we should initialize it with starting balance too.
+    # User said "Net profit as a separate metric... shows total pnl from bets". 
+    # Does the chart show Bankroll or Net Profit? 
+    # The label I changed to "Bankroll". So chart SHOULD show Bankroll.
+    
+    cumulative_balance = total_starting_balance
     
     for date_str in sorted_dates:
         day_pnl = daily_pnl[date_str]
@@ -212,40 +252,6 @@ async def analytics_data(
 
     rows_html_data.sort(key=get_sort_key, reverse=filters.sort_desc)
     
-    # Loop already executed above to build chart_data and rows_html_data
-    # stats dictionary construction logic should be moved or variables reused.
-    
-    # The previous replace block replaced the first half of the logic.
-    # We need to ensure variables like total_staked, wins, etc are available for 'stats'.
-    # They were defined and populated in the replacement block.
-    
-    # However, the previous tool call replaced lines 124-216 with the loop.
-    # But the original file had lines 227+ that ALSO did the loop?
-    # Ah, lines 179-216 in the original file (Wait, I view_file output showed two loops??)
-    # Let me check view_file output again.
-    # Line 181: rows_html_data = []
-    # Line 183: for bet in bets: ...
-    # Line 227: rows_html_data = [] ...
-    # Line 229: for bet in bets: ...
-    
-    # YES! In step 196 I seemingly duplicated the loop logic by accident or it was already there?
-    # Looking at Step 196 diff:
-    # It added the sorting logic at line 117-170, but it seems there was already logic below it?
-    # I see "Calculate Bankroll over time" at line 122 in Step 196 output.
-    # It seems I pasted the loop TWICE in previous edits or the `view_file` showed it twice?
-    
-    # In Step 241 output:
-    # Lines 124-216 is the "Ordering" + "Sort map" + "rows_html_data" loop logic I just added/modified.
-    # Lines 217-262 is "Calculate Bankroll over time" ... AGAIN.
-    
-    # I need to REMOVE the second implementation (Lines 217-262) because my replacement above (124-216) 
-    # now handles BOTH chart data and table data.
-    
-    # So I will remove lines 217-262.
-
-    # Reverse for table display (newest first)
-    # rows_html_data.reverse() # Removed, handled by explicit sort above
-
     # Slice for Pagination
     total_items = len(rows_html_data)
     page = filters.page if filters.page and filters.page > 0 else 1
@@ -257,7 +263,7 @@ async def analytics_data(
     total_pages = (total_items + limit - 1) // limit
 
     # Render Table Rows
-    table_html = templates.TemplateResponse(
+    table_content = templates.TemplateResponse(
         "partials/analytics_rows.html",
         {
             "request": request,
@@ -268,14 +274,15 @@ async def analytics_data(
     stats = {
         "total_bets": len(bets),
         "total_staked": round(total_staked, 2),
-        "total_profit": round(running_balance, 2),
-        "roi": round((running_balance / total_staked * 100), 2) if total_staked > 0 else 0.0,
+        "total_profit": round(running_balance, 2), # Bankroll
+        "net_profit": round(net_pnl, 2), # Pure PnL
+        "roi": round((net_pnl / total_staked * 100), 2) if total_staked > 0 else 0.0, # ROI should be based on Net PnL, not Bankroll
         "win_rate": round((wins / (wins + losses) * 100), 2) if (wins + losses) > 0 else 0.0
     }
 
     return {
         "chart_data": chart_data,
-        "table_html": table_html,
+        "table_html": table_content,
         "stats": stats,
         "pagination": {
             "page": page,

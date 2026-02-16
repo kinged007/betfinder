@@ -131,6 +131,10 @@ async def place_bet(
             update_data["status"] = BetStatus.OPEN.value # Or pending if async confirmation
             update_data["external_id"] = response.get("external_id")
             
+            # Deduct stake from balance
+            bookmaker_model.balance -= bet_obj.stake
+            db.add(bookmaker_model)
+            
             # Send Notification if preset_id is present
             if bet_obj.preset_id:
                 try:
