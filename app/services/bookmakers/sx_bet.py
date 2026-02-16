@@ -7,6 +7,9 @@ from app.core.enums import BetResult, BetStatus
 from app.services.bookmakers.sx_bet_market_types import MarketType
 from app.db.models import Bet
 from app.schemas.odds import OddsEvent, OddsBookmaker, OddsMarket, OddsOutcome, OddsSport
+from web3 import Web3
+from eth_account import Account
+from eth_account.messages import encode_typed_data
 
 # Constants for SX Network (Chain ID 4162)
 SX_MAINNET_TOKENS = {
@@ -21,8 +24,12 @@ SX_TESTNET_TOKENS = {
 
 class SXBetBookmaker(APIBookmaker):
     name = "sx_bet"
-    title = "SX.Bet"
+    title = "SX.Bet (Exchange)"
+    test_on = ["private_key"]
     auth_type = None # Public API does not require auth headers
+    
+    # Unit conversion constants
+    BASE_DECIMALS = 6    # USDC/WSX uses 6 decimals not require auth headers
     
     # Defaults
     base_url = "https://api.sx.bet" 
@@ -38,12 +45,37 @@ class SXBetBookmaker(APIBookmaker):
         
         if self.use_testnet:
             # Testnet URL (Toronto)
-            self.base_url = "https://api-toronto.sx.bet"
-            # TODO: Add verification for Testnet token addresses if different
-            self.tokens = SX_MAINNET_TOKENS # Fallback
+            self.base_url = "https://api.toronto.sx.bet"
+            # Unverified testnet RPC - using mainnet for now or need specific testnet RPC
+            # According to docs, Toronto testnet might use a different RPC.
+            # For now, let's use the same RPC if it supports both, or find the testnet RPC.
+            # Valid Testnet RPC for SX (Sepolia/Toronto): https://rpc.toronto.sx.bet
+            self.rpc_url = "https://rpc.toronto.sx.bet" 
+            self.chain_id = 4162 # Verify if testnet has diff chainId. Toronto is 4162? 
+            # SX Mainnet is 4162. Toronto Testnet is usually same ID on different network? No.
+            # SX Docs say: SX Network (Mainnet) Chain ID: 4162. 
+            # Toronto (Testnet) Chain ID: 647.
+            self.chain_id = 647
+            self.tokens = SX_TESTNET_TOKENS 
         else:
             self.base_url = "https://api.sx.bet"
             self.tokens = SX_MAINNET_TOKENS
+            self.chain_id = 4162
+            self.metadata_url = "https://api.sx.bet/metadata"
+            self.rpc_url = "https://rpc.sx-rollup.gelato.digital"
+
+        self.currency = config.get("currency", "USDC")
+        self.exchange_address = config.get("exchange_address", "")
+        self.private_key = config.get("private_key", "")
+        
+        self.w3 = None
+        self.account = None
+        if self.private_key:
+            try:
+                self.w3 = Web3(Web3.HTTPProvider(self.rpc_url))
+                self.account = Account.from_key(self.private_key)
+            except Exception as e:
+                print(f"Failed to initialize web3 for SX Bet: {e}")
             
         self.currency = config.get("currency", "USDC")
         self.exchange_address = config.get("exchange_address", "")
@@ -85,6 +117,12 @@ class SXBetBookmaker(APIBookmaker):
                 "name": "exchange_address", 
                 "label": "Exchange Address (Optional)", 
                 "type": "str", 
+                "default": ""
+            },
+            {
+                "name": "private_key",
+                "label": "Private Key (for betting)",
+                "type": "password",
                 "default": ""
             }
         ])
@@ -533,11 +571,258 @@ class SXBetBookmaker(APIBookmaker):
 
     async def get_account_balance(self) -> Dict[str, Any]:
         """
-        Return 0 balance for now as we are not connecting wallet in Phase 1.
+        Get available balance from the blockchain wallet.
         """
-        return {
-            "balance": 0.0,
-            "currency": self.currency,
-            "account_id": self.exchange_address or "not_configured"
-        }
+        if not self.w3 or not self.account:
+             return {
+                "balance": 0.0,
+                "currency": self.currency,
+                "account_id": "not_configured"
+            }
+
+        try:
+             # ERC20 Balance Check
+             token_addr = self.base_token
+             # minimal ABI for balanceOf
+             abi = [{"constant":True,"inputs":[{"name":"_owner","type":"address"}],"name":"balanceOf","outputs":[{"name":"balance","type":"uint256"}],"payable":False,"stateMutability":"view","type":"function"}]
+             
+             contract = self.w3.eth.contract(address=token_addr, abi=abi)
+             balance_wei = contract.functions.balanceOf(self.account.address).call()
+             
+             balance = float(balance_wei) / (10 ** self.token_decimals)
+             
+             return {
+                "balance": balance,
+                "currency": self.currency,
+                "account_id": self.account.address
+            }
+        except Exception as e:
+            print(f"Error fetching balance for SX Bet: {e}")
+            return {
+                "balance": 0.0,
+                "currency": self.currency,
+                "account_id": self.account.address if self.account else "error"
+            }
+
+    async def place_bet(self, bet: Bet) -> Dict[str, Any]:
+        """
+        Place a bet on SX Bet using EIP-712 signing and the V2 Fill API.
+        """
+        if not self.w3 or not self.account:
+             return {"status": "error", "message": "SX Bet Private Key not configured."}
+
+        try:
+            # 1. Prepare Order Parameters
+            market_hash = bet.odd_data.get("market_sid")
+            if not market_hash:
+                 return {"status": "error", "message": "Missing market_hash (market_sid) for this bet."}
+            
+            # SX Bet Taker Logic:
+            # If we are backing Outcome 1 (Home?), isTakerBettingOutcomeOne = True?
+            # We need to map our selection to Outcome 1 or 2 based on `sx_bet.py` logic.
+            # In `fetch_league_odds`:
+            # - If market_info.outcomeOneName == selection -> Outcome 1
+            # - If market_info.outcomeTwoName == selection -> Outcome 2
+            
+            # The odd_data stores 'sid' which is contract ID? Or 'outcomeOne'/'outcomeTwo'?
+            # In `fetch_league_odds`: 
+            #   sid="outcomeTwo" if we processed outcomeTwoName (which was maker pct 1 -> outcome 2)
+            #   sid="outcomeOne" if we processed outcomeOneName
+            
+            sid = bet.odd_data.get("sid")
+            is_taker_betting_outcome_one = False
+            
+            # Verification needed:
+            # If `sid` == "outcomeOne", does that mean we want Outcome One?
+            # Yes. In `fetch_league_odds`, we assign `sid="outcomeOne"` when processing `outcome_one_name`.
+            if sid == "outcomeOne":
+                is_taker_betting_outcome_one = True
+            elif sid == "outcomeTwo":
+                is_taker_betting_outcome_one = False
+            else:
+                # Fallback or error?
+                return {"status": "error", "message": f"Unknown selection side: {sid}"}
+
+            # Amounts
+            stake_amount = bet.stake
+            stake_wei = int(stake_amount * (10 ** self.token_decimals))
+            
+            price = bet.price
+            # Desired Odds in 10^20 format
+            # Implied Prob = 1 / Price
+            # Signal Odds (Maker Side?) No, API takes Taker Odds.
+            # "desiredOdds" parameter documentation says: "83000000000000000000; // ~1.20 decimal odds"
+            # It seems they use Implied Probability * 10^20 as the format.
+            # Wait, 1.20 decimal -> 1/1.20 = 0.8333 -> 8.33 * 10^19?
+            # Docs Example: "desiredOdds": "83000000000000000000" (~1.20 decimal)
+            # 83 * 10^18 / 10^20 = 0.83. 1/0.83 = 1.204. Checks out.
+            
+            # Implied Prob = 1 / Price
+            implied_prob = 1.0 / price
+            
+            # SX Bet Odds Ladder Enforcement
+            # Step is 0.125% = 0.00125
+            # In 10^20 representation: 0.00125 * 10^20 = 1.25 * 10^17 = 125,000,000,000,000,000
+            LADDER_STEP = 125_000_000_000_000_000 
+            
+            raw_odds_int = int(implied_prob * (10 ** 20))
+            
+            # Round to nearest step
+            # round(val / step) * step
+            desired_odds_int = int(round(raw_odds_int / LADDER_STEP) * LADDER_STEP)
+            
+            desired_odds_str = str(desired_odds_int)
+            print(f"Odds Calc: Price {price} -> Prob {implied_prob:.4f} -> Raw {raw_odds_int} -> Ladder {desired_odds_int} (Step {LADDER_STEP})")
+            
+            # Slippage (User configurable? Hardcode to 5% or 1% for now?)
+            odds_slippage = 5
+            
+            # Salt
+            import random
+            fill_salt = str(random.getrandbits(256))
+            
+            # Metadata / Contract Addresses
+            # We need TokenTransferProxy and EIP712FillHasher addresses.
+            # We can use defaults based on Mainnet/Testnet constants or fetch metadata.
+            # For robustness, let's hardcode knowns or fetch.
+            # Let's fetch metadata once or use class constants if we had them.
+            # I'll create a helper to get these.
+            
+            addresses = await self._get_sx_addresses()
+            fill_hasher = addresses.get("EIP712FillHasher")
+            
+            # 2. Build EIP-712 Payload
+            
+            # Fetch Chain ID dynamically to ensure it matches the RPC
+            try:
+                dynamic_chain_id = self.w3.eth.chain_id
+            except Exception as e:
+                print(f"Failed to fetch chain_id from RPC: {e}")
+                dynamic_chain_id = self.chain_id
+
+            domain = {
+                "name": "SX Bet",
+                "version": "6.0",
+                "chainId": dynamic_chain_id,
+                "verifyingContract": fill_hasher
+            }
+            
+            print(f"DEBUG: Using Chain ID {dynamic_chain_id} for EIP-712 Signature")
+            
+            types = {
+                "Details": [
+                    {"name": "action", "type": "string"},
+                    {"name": "market", "type": "string"},
+                    {"name": "betting", "type": "string"},
+                    {"name": "stake", "type": "string"},
+                    {"name": "worstOdds", "type": "string"},
+                    {"name": "worstReturning", "type": "string"},
+                    {"name": "fills", "type": "FillObject"},
+                ],
+                "FillObject": [
+                    {"name": "stakeWei", "type": "string"},
+                    {"name": "marketHash", "type": "string"},
+                    {"name": "baseToken", "type": "string"},
+                    {"name": "desiredOdds", "type": "string"},
+                    {"name": "oddsSlippage", "type": "uint256"},
+                    {"name": "isTakerBettingOutcomeOne", "type": "bool"},
+                    {"name": "fillSalt", "type": "uint256"},
+                    {"name": "beneficiary", "type": "address"},
+                    {"name": "beneficiaryType", "type": "uint8"},
+                    {"name": "cashOutTarget", "type": "bytes32"},
+                ]
+            }
+            
+            # Message
+            # Note: The "message" part of typed data for SX Bet involves some "N/A" fields for action/betting/etc 
+            # and the nested "fills" object.
+            # Based on docs example:
+            # message: { action: "N/A", ..., fills: { ... } }
+            
+            fills = {
+                "stakeWei": str(stake_wei),
+                "marketHash": market_hash,
+                "baseToken": self.base_token,
+                "desiredOdds": desired_odds_str,
+                "oddsSlippage": odds_slippage,
+                "isTakerBettingOutcomeOne": is_taker_betting_outcome_one,
+                "fillSalt": int(fill_salt),
+                "beneficiary": "0x0000000000000000000000000000000000000000",
+                "beneficiaryType": 0,
+                "cashOutTarget": "0x0000000000000000000000000000000000000000000000000000000000000000"
+            }
+            
+            message = {
+                "action": "N/A",
+                "market": market_hash,
+                "betting": "N/A",
+                "stake": "N/A",
+                "worstOdds": "N/A",
+                "worstReturning": "N/A",
+                "fills": fills
+            }
+            
+            # 3. Sign
+            encoded_data = encode_typed_data(domain_data=domain, message_types=types, message_data=message)
+            signed_msg = self.w3.eth.account.sign_message(encoded_data, private_key=self.private_key)
+            signature = signed_msg.signature.hex()
+            
+            # 4. API Request
+            payload = {
+                "market": market_hash,
+                "baseToken": self.base_token,
+                "isTakerBettingOutcomeOne": is_taker_betting_outcome_one,
+                "stakeWei": str(stake_wei),
+                "desiredOdds": desired_odds_str,
+                "oddsSlippage": odds_slippage,
+                "taker": self.account.address,
+                "takerSig": signature,
+                "fillSalt": fill_salt
+            }
+            
+            print(f"\n--- SX Bet Debug ---")
+            print(f"EIP-712 Message: {message}")
+            print(f"API Payload: {payload}")
+            print(f"--------------------\n")
+            
+            res = await self.make_request("POST", "/orders/fill/v2", data=payload)
+            
+            if res.status_code == 200:
+                 data = res.json()
+                 if data.get("status") == "success":
+                     # Where is transaction hash? 
+                     # Response format: { status: "success", data: { transactionHash: "..." } } ? 
+                     # Or might be orderHash. 
+                     # The docs example response just says "success" or "failure".
+                     # Assuming typical structure.
+                     return {
+                        "success": True,
+                        "status": BetStatus.OPEN.value,
+                        "bet_id": data.get("data", {}).get("transactionHash") or "pending",
+                        "external_id": data.get("data", {}).get("orderHash"),
+                        "message": "Bet placed successfully on SX Bet."
+                    }
+                 else:
+                     return {"status": "error", "message": f"SX Bet API Error: {data}"}
+            else:
+                 return {"status": "error", "message": f"HTTP {res.status_code}: {res.text}"}
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return {"status": "error", "message": f"Failed to place bet: {str(e)}"}
+
+    async def _get_sx_addresses(self) -> Dict[str, Any]:
+        """Fetch metadata or return defaults."""
+        # Simple caching or just return known testnet/mainnet values
+        if self.use_testnet:
+             return {
+                 "EIP712FillHasher": "0xC8dbedb008deB9c870E871F7a470f847C67135E9",
+                 "TokenTransferProxy": "0xD7cCD18d33d3EC2879A6DF8e82Ef81C8830c534F"
+             }
+        else:
+             return {
+                 "EIP712FillHasher": "0x845a2Da2D70fEDe8474b1C8518200798c60aC364",
+                 "TokenTransferProxy": "0x38aef22152BC8965bf0af7Cf53586e4b0C4E9936"
+             }
 

@@ -20,6 +20,7 @@ dependencies = [
     "uvicorn>=0.40.0",
     "websockets>=16.0",
     "asyncpg>=0.30.0",
+    "web3>=7.0.0",
 ]
 
 [dependency-groups]

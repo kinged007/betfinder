@@ -175,6 +175,8 @@ class APIBookmaker(SimpleBookmaker):
     db: Optional[Any] = None
     unauthorized_codes = {401, 403}
 
+    test_on: List[str] = ["api_token", "username"] # Fields that trigger "Test Connection" button availability
+
     def __init__(self, key: str, config: Dict[str, Any], db: Optional[Any] = None):
         super().__init__(key, config)
         self.api_token = config.get("api_token", "") or config.get("api_key", "")
@@ -356,23 +358,10 @@ class APIBookmaker(SimpleBookmaker):
                     headers=full_headers,
                     timeout=30.0
                 )
-                res.raise_for_status()
-                return res
-            except httpx.HTTPStatusError as e:
-                # Extract error details first for logging/notification
-                error_content = str(e)
-                try:
-                     if e.response:
-                        await e.response.read()
-                        # Capture full response body (e.g. Smarkets JSON error)
-                        resp_text = e.response.text
-                        error_content = f"{e.response.status_code} {e.response.reason_phrase}\nResponse: {resp_text}"
-                except Exception:
-                    pass
-
+                
                 # 4a. Auto-Reauthorization Attempt
-                if e.response.status_code in self.unauthorized_codes and retry_auth:
-                    print(f"Auth failed ({e.response.status_code}) for {self.key}. Attempting re-authorization...")
+                if res.status_code in self.unauthorized_codes and retry_auth:
+                    print(f"Auth failed ({res.status_code}) for {self.key}. Attempting re-authorization...")
                     try:
                         auth_success = await self.authorize()
                         if auth_success:
@@ -382,18 +371,26 @@ class APIBookmaker(SimpleBookmaker):
                                 method, endpoint, data, params, headers, use_auth, retry_auth=False
                             )
                         else:
-                            print(f"Re-authorization failed for {self.key}. Error: {error_content}")
+                            print(f"Re-authorization failed for {self.key}.")
                     except Exception as auth_error:
                         print(f"Error during re-authorization for {self.key}: {auth_error}")
 
-                # 4b. Circuit Breaker Logic (pass detailed error)
-                await self._handle_request_error(last_error=error_content)
+                # Check for 5xx errors for Circuit Breaker? 
+                # For now, we only trip on connection errors or if we explicitly decide to.
+                # If user wants 400 details, we simply return the response.
                 
-                print(f"HTTPStatusError in make_request for {url}: {error_content}")
-                # Re-raise with the detailed message
-                raise Exception(error_content) from e
+                return res
+
+            except httpx.HTTPStatusError as e:
+                # This catches raise_for_status() which we removed, so this block is technically checking nothing 
+                # unless we left it. But we want to handle failures manually.
+                # However, client.request might raise other HTTP errors? No, only RequestError.
+                # We can remove this specific catch or leave it for safety if we ever add raise_for_status back.
+                # We'll just catch generic Exception to be safe for connection issues.
+                raise e
+
             except Exception as e:
-                # Trigger circuit breaker logic for connection errors too
+                # Trigger circuit breaker logic for connection errors
                 detailed_error = f"{type(e).__name__}: {str(e)}"
                 await self._handle_request_error(last_error=detailed_error)
 
@@ -668,8 +665,15 @@ class BookmakerFactory:
         return results
 
     @classmethod
-    def get_all_schemas(cls) -> Dict[str, List[Dict[str, Any]]]:
-        return {k: v.get_config_schema() for k, v in cls._registry.items()}
+    def get_all_schemas(cls) -> Dict[str, Dict[str, Any]]:
+        schemas = {}
+        for k, v in cls._registry.items():
+            test_on = getattr(v, 'test_on', [])
+            schemas[k] = {
+                "fields": v.get_config_schema(),
+                "test_on": test_on
+            }
+        return schemas
 
 # Register SimpleBookmaker (default is handled in get_bookmaker logic, but we can register explicitly)
 BookmakerFactory.register("simple", SimpleBookmaker)

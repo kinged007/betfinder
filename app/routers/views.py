@@ -49,6 +49,22 @@ async def trade_feed_view(
     result = await db.execute(select(Preset).where(Preset.active == True))
     presets = result.scalars().all()
     
+    # Fetch active API Bookmakers to check configuration
+    from app.db.models import Bookmaker
+    b_res = await db.execute(select(Bookmaker).where(Bookmaker.key == 'sx_bet'))
+    sx_bet = b_res.scalars().first()
+    
+    api_caps = {}
+    if sx_bet and sx_bet.active:
+        config = sx_bet.config or {}
+        # Check if private key is set (basic validation)
+        has_key = bool(config.get("private_key"))
+        api_caps["sx_bet"] = {
+            "enabled": True,
+            "ready": has_key,
+            "title": sx_bet.title
+        }
+    
     current_preset = None
     if preset_id:
         current_preset = await db.get(Preset, preset_id)
@@ -64,6 +80,7 @@ async def trade_feed_view(
             "active": "trade_feed",
             "presets": presets,
             "current_preset": current_preset,
+            "api_bookmakers": api_caps,
             "is_dev": settings.is_dev,
         }
     )
@@ -297,7 +314,11 @@ class ManualBetRequest(BaseModel):
     price: float
     stake: float
     true_odds: float
+    price: float
+    stake: float
+    true_odds: float
     preset_id: Optional[int] = None
+    place_via_api: bool = False
 
 @router.post("/trade-feed/bet")
 async def register_manual_bet(
@@ -390,21 +411,51 @@ async def register_manual_bet(
         preset_id=bet_in.preset_id
     )
     
-    db.add(new_bet)
-    await db.commit()
-    await db.refresh(new_bet)
-    
-    # Send Notification if preset attached
-    if bet_in.preset_id:
+    # If API Bet requested
+    if bet_in.place_via_api and bm.key == 'sx_bet':
+        # Need to instantiate the bookmaker service
+        from app.services.bookmakers.base import BookmakerFactory
+        
+        try:
+            # Use get_bookmaker instead of create_bookmaker
+            bm_service = BookmakerFactory.get_bookmaker(bm.key, bm.config, db)
+
+            bet_result = await bm_service.place_bet(new_bet)
+            
+            if bet_result.get("success"):
+                new_bet.external_id = bet_result.get("external_id")
+                new_bet.status = BetStatus.OPEN.value # Set to OPEN instead of MANUAL
+                new_bet.comment = f"Placed via API. TX: {bet_result.get('bet_id')}"
+                
+                # Commit updates to bet if success
+                db.add(new_bet)
+                await db.commit()
+                await db.refresh(new_bet)
+            else:
+                # Failed to place via API - Do NOT save the bet
+                raise Exception(bet_result.get("message"))
+                
+        except Exception as e:
+            # Do not save bet to DB
+            raise HTTPException(status_code=400, detail=f"API Placement Failed: {str(e)}")
+
+    else:
+        # Standard Manual Bet
+        db.add(new_bet)
+        await db.commit()
+        await db.refresh(new_bet)
+
+    # Send Notification if preset attached (ONLY if saved)
+    if bet_in.preset_id: # and saved
         preset = await db.get(Preset, bet_in.preset_id)
         if preset:
-            from app.services.notifications.manager import NotificationManager
-            nm = NotificationManager(db)
-            # Fire and forget? ideally background task, but this is simple enough to await
-            try:
-                await nm.send_bet_notification(preset, new_bet)
-            except Exception as e:
-                logging.getLogger(__name__).error(f"Failed to send manual bet notification: {e}")
+             # ... existing notification logic ...
+             from app.services.notifications.manager import NotificationManager
+             nm = NotificationManager(db)
+             try:
+                 await nm.send_bet_notification(preset, new_bet)
+             except Exception as e:
+                 logging.getLogger(__name__).error(f"Failed to send manual bet notification: {e}")
 
     return {"status": "success", "bet_id": new_bet.id}
 

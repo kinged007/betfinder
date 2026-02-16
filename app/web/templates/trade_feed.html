@@ -231,6 +231,22 @@
                 </div>
             </div>
 
+            <!-- API Placement Toggle -->
+            <div id="modal-api-bet-container" class="form-control mb-6 hidden">
+                <label class="label cursor-pointer justify-start gap-4">
+                    <input type="checkbox" class="toggle toggle-primary" id="modal-api-bet-toggle" />
+                    <span class="label-text font-semibold">Place via API</span>
+                    <div class="tooltip" data-tip="Automatically place this bet on the exchange via API">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 opacity-50" fill="none"
+                            viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                    </div>
+                </label>
+                <div id="modal-api-msg" class="text-xs text-error mt-1 hidden"></div>
+            </div>
+
             <!-- Register Button -->
             <button class="btn btn-primary btn-block btn-lg" onclick="submitBet()">
                 REGISTER TRADE
@@ -339,6 +355,7 @@
 
     <script>
         const presetId = "{{ current_preset.id }}";
+        const apiBookmakers = {{ api_bookmakers | tojson | safe }};
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const ws = new WebSocket(`${protocol}//${window.location.host}/ws/tradefeed/${presetId}`);
         const tbody = document.getElementById("trade-feed-body");
@@ -787,6 +804,34 @@
             const defaultStake = parseFloat("{{ current_preset.default_stake }}") || 10;
             document.getElementById('modal-stake').value = defaultStake;
 
+            // API Toggle Logic
+            const apiContainer = document.getElementById('modal-api-bet-container');
+            const apiToggle = document.getElementById('modal-api-bet-toggle');
+            const apiMsg = document.getElementById('modal-api-msg');
+
+            // Find if current bookmaker is API enabled
+            // Match by Key or Title
+            const bkName = item.bookmaker;
+            const apiCap = Object.values(apiBookmakers).find(cap => cap.title === bkName || cap.key === bkName);
+
+            if (apiCap && apiCap.enabled) {
+                apiContainer.classList.remove('hidden');
+
+                if (apiCap.ready) {
+                    apiToggle.disabled = false;
+                    apiToggle.checked = true; // Default to checked if ready? Or false? Let's default true for convenience if configured.
+                    apiMsg.classList.add('hidden');
+                } else {
+                    apiToggle.disabled = true;
+                    apiToggle.checked = false;
+                    apiMsg.textContent = "Private Key not configured. Add it in Bookmakers config to enable.";
+                    apiMsg.classList.remove('hidden');
+                }
+            } else {
+                apiContainer.classList.add('hidden');
+                apiToggle.checked = false;
+            }
+
             recalculateEdge();
             document.getElementById('bet-modal').showModal();
         }
@@ -823,8 +868,10 @@
                 selection: document.getElementById('modal-selection').value,
                 price: parseFloat(document.getElementById('modal-odds').value),
                 stake: parseFloat(document.getElementById('modal-stake').value),
+
                 true_odds: parseFloat(document.getElementById('modal-true-odds').value),
-                preset_id: parseInt(presetId)
+                preset_id: parseInt(presetId),
+                place_via_api: document.getElementById('modal-api-bet-toggle').checked
             };
 
             try {

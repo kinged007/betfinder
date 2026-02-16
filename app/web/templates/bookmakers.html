@@ -115,7 +115,8 @@
         const container = document.getElementById('dynamic_fields');
         container.innerHTML = ''; // Clear existing
 
-        const schema = schemas[bm.key] || schemas['simple'] || [];
+        const schemaObj = schemas[bm.key] || schemas['simple'] || { fields: [], test_on: [] };
+        const schema = schemaObj.fields || [];
         const config = bm.config || {};
 
         // 1. Add Actual Balance (Always first and special)
@@ -173,19 +174,60 @@
         const btn = document.getElementById('test_conn_btn');
         if (!btn) return;
 
-        const username = document.getElementById('field_username')?.value || '';
-        const password = document.getElementById('field_password')?.value || '';
-        const apiToken = document.getElementById('field_api_token')?.value || '';
+        if (!currentBmKey) return;
+        const schemaObj = schemas[currentBmKey] || schemas['simple'] || {};
+        const testOn = schemaObj.test_on || [];
 
-        const hasUserPass = username.trim() !== '' && password.trim() !== '';
-        const hasToken = apiToken.trim() !== '';
+        // If no test fields defined, fall back to old logic or disable?
+        // If test_on is empty but it's an API bookmaker, maybe we default to api_token etc?
+        // But we handle defaults in backend now. 
 
-        btn.disabled = !(hasUserPass || hasToken);
+        if (testOn.length === 0) {
+            // Fallback for simple or legacy
+            const username = document.getElementById('field_username')?.value || '';
+            const password = document.getElementById('field_password')?.value || '';
+            const apiToken = document.getElementById('field_api_token')?.value || '';
+            const hasUserPass = username.trim() !== '' && password.trim() !== '';
+            const hasToken = apiToken.trim() !== '';
+            btn.disabled = !(hasUserPass || hasToken);
+            return;
+        }
+
+        // Check if ANY of the test_on fields are present
+        // Actually, logic is usually OR between authentication MODES, but specific fields might be AND (user+pass).
+        // For now, let's assume if 'username' is in list, we need 'username' (and 'password' if also in list?)
+        // The user said: "defaul will be api key OR username and password".
+        // If I put ["api_token", "username"] in test_on, does it mean (api_token OR username)? 
+        // Or (api_token) OR (username AND password)?
+        // My Base implementation was `test_on = ["api_token", "username"]`.
+        // Let's implement: If ANY of the fields in `test_on` has a value, enable.
+        // Wait, for username, we usually need password.
+        // Let's rely on the fact that if 'username' is typed, 'password' is usually required.
+        // But for validation "can I click test", usually "is configured" is enough.
+        // If I just check if ANY of the `test_on` fields is populated, it works for `private_key` (SX).
+        // It works for `api_token`.
+        // For `username`, it enables if username is there (even if password empty). Test will fail, but button enabled. That's acceptable.
+
+        let hasCreds = false;
+        for (const field of testOn) {
+            const el = document.getElementById(`field_${field}`);
+            if (el && el.value.trim() !== '') {
+                hasCreds = true;
+                break;
+            }
+        }
+
+        // Special case: if username is present, we often require password too conceptually, but button enabling can be loose.
+        // However, if test_on includes "password", we should probably check it?
+        // Let's keep it simple: Enable if ANY test_on field is filled. Matches "OR" logic for API Key vs User/Pass.
+
+        btn.disabled = !hasCreds;
     }
 
     function getPayload() {
         if (!currentBmId || !currentBmKey) return null;
-        const schema = schemas[currentBmKey] || schemas['simple'] || [];
+        const schemaObj = schemas[currentBmKey] || schemas['simple'] || {};
+        const schema = schemaObj.fields || [];
         const config = {};
 
         schema.forEach(field => {
