@@ -143,7 +143,6 @@ async def get_dashboard_bet_stats(db: AsyncSession = Depends(get_db)):
     # Current Bankroll is whatever running_balance ended up at? 
     # No, running_balance was just initialized. We need to add net_profit to it.
     current_bankroll = total_starting_balance + net_profit
-
     return {
         "total_bets": total_bets,
         "roi": round(roi, 1),
