@@ -46,7 +46,7 @@ PRESET_OTHER_CONFIG_SCHEMA: List[Dict[str, Any]] = [
             {"value": "true", "label": "Enabled"},
             {"value": "false", "label": "Disabled"}
         ],
-        "default": "true"
+        "default": "false"
     },
     {
         "key": "notification_on_bet",
@@ -56,7 +56,7 @@ PRESET_OTHER_CONFIG_SCHEMA: List[Dict[str, Any]] = [
             {"value": "true", "label": "Enabled"},
             {"value": "false", "label": "Disabled"}
         ],
-        "default": "true"
+        "default": "false"
     },
 
 ]
