@@ -88,6 +88,27 @@ async def get_dashboard_bet_stats(db: AsyncSession = Depends(get_db)):
     win_rate = (wins / (wins + losses) * 100) if (wins + losses) > 0 else 0.0
     
     # Build chart data
+    # Calculate Starting Balance
+    result_bk = await db.execute(select(Bookmaker).where(Bookmaker.active == True))
+    bookmakers = result_bk.scalars().all()
+    
+    total_starting_balance = 0.0
+    for bk in bookmakers:
+        cfg = bk.config or {}
+        starting_val = cfg.get("starting_balance")
+        if starting_val is None:
+            starting = 0.0
+        else:
+            try:
+                starting = float(starting_val)
+            except (ValueError, TypeError):
+                starting = 0.0
+        total_starting_balance += starting
+
+    running_balance = total_starting_balance
+    net_profit = 0.0
+    
+    # Build chart data
     daily_pnl = defaultdict(float)
     
     for bet in bets:
@@ -103,10 +124,11 @@ async def get_dashboard_bet_stats(db: AsyncSession = Depends(get_db)):
         ts = bet.settled_at if bet.settled_at else bet.placed_at
         date_str = ts.strftime('%Y-%m-%d')
         daily_pnl[date_str] += pnl
-    
+        net_profit += pnl # Accumulate Net Profit
+        
     # Build chart data
     sorted_dates = sorted(daily_pnl.keys())
-    cumulative_balance = 0.0
+    cumulative_balance = total_starting_balance # Start chart at Bankroll start
     chart_data = []
     
     for date_str in sorted_dates:
@@ -118,11 +140,22 @@ async def get_dashboard_bet_stats(db: AsyncSession = Depends(get_db)):
             'pnl': round(day_pnl, 2)
         })
     
+    # Current Bankroll is whatever running_balance ended up at? 
+    # No, running_balance was just initialized. We need to add net_profit to it.
+    current_bankroll = total_starting_balance + net_profit
+
     return {
         "total_bets": total_bets,
         "roi": round(roi, 1),
         "win_rate": round(win_rate, 1),
-        "total_profit": round(total_profit, 2),
+        "total_profit": round(net_profit, 2), # Maintain key 'total_profit' as 'Net Profit' for now? 
+        # Actually user wants BOTH. 
+        # existing 'total_profit' in dashboard.html is not displayed? 
+        # Wait, dashboard.html doesn't show 'total_profit' in the list!
+        # It shows Total Bets, ROI, Win Rate.
+        # I will add new keys for safety.
+        "net_profit": round(net_profit, 2),
+        "bankroll": round(current_bankroll, 2),
         "chart_data": chart_data
     }
 

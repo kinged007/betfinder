@@ -14,7 +14,9 @@
         }
 
         100% {
-            background-color: transparent; }}
+            background-color: transparent;
+        }
+    }
 
     @keyframes flashRed {
         0% {
@@ -22,7 +24,9 @@
         }
 
         100% {
-            background-color: transparent; }}
+            background-color: transparent;
+        }
+    }
 
     .flash-increase {
         animation: flashGreen 1.5s ease-out;
@@ -63,7 +67,9 @@
 
         100% {
             transform: scale(0.95);
-            box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }}
+            box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
+        }
+    }
 </style>
 
 <div class="w-full px-4 md:px-6 max-w-7xl mx-auto">
@@ -80,18 +86,26 @@
                 <div class="card-body p-4 flex flex-col">
                     <h3 class="card-title text-lg mb-3">My Bet Stats</h3>
 
-                    <div class="flex flex-col gap-2 mb-3">
+                    <div class="grid grid-cols-2 gap-2 mb-3">
                         <div class="stat p-2 bg-base-200 rounded-lg">
-                            <div class="stat-title text-xs">Total Bets</div>
-                            <div class="stat-value text-xl" id="widget-total-bets">0</div>
+                            <div class="stat-title text-xs">Bankroll</div>
+                            <div class="stat-value text-lg md:text-xl" id="widget-bankroll">0.00</div>
+                            </div>
+                            <div class="stat p-2 bg-base-200 rounded-lg">
+                                <div class="stat-title text-xs">Net Profit</div>
+                                <div class="stat-value text-lg md:text-xl" id="widget-net-profit">0.00</div>
                         </div>
                         <div class="stat p-2 bg-base-200 rounded-lg">
                             <div class="stat-title text-xs">ROI</div>
-                            <div class="stat-value text-xl" id="widget-roi">0.0%</div>
+                            <div class="stat-value text-lg md:text-xl" id="widget-roi">0.0%</div>
                         </div>
                         <div class="stat p-2 bg-base-200 rounded-lg">
                             <div class="stat-title text-xs">Win Rate</div>
-                            <div class="stat-value text-xl" id="widget-win-rate">0.0%</div>
+                            <div class="stat-value text-lg md:text-xl" id="widget-win-rate">0.0%</div>
+                            </div>
+                            <div class="stat p-2 bg-base-200 rounded-lg col-span-2">
+                                <div class="stat-title text-xs">Total Bets</div>
+                                <div class="stat-value text-lg md:text-xl" id="widget-total-bets">0</div>
                         </div>
                     </div>
 
@@ -197,321 +211,18 @@
     {% endif %}
 </div>
 
-<script>
-    let widgetChartInstance = null;
-    window.currentPresetId = {% if first_preset %}{{ first_preset.id }} {% else %} null{% endif %};
-    window.currentDefaultStake = {% if first_preset %}{{ first_preset.default_stake or 10 }} {% else %} 10{% endif %};
-    window.currentPresetAfterTradeAction = {% if first_preset %}'{{ first_preset.after_trade_action or 'none' }}'{% else %} 'none'{% endif %};
-    let websocket = null;
-    let reconnectTimeout = null;
-    let previousOdds = {}; // Track odds for flash animations
-
-    // Sort config
-    let sortCol = 'edge';
-    let sortDir = 'desc';
-    {% if first_preset %}
-    const initialConfig = {{ (first_preset.other_config or {}) | tojson | safe }};
-    sortCol = initialConfig.sort_by || 'edge';
-    sortDir = initialConfig.sort_order || 'desc';
-    {% endif %}
-
-    document.addEventListener('DOMContentLoaded', () => {
-        initWidgetChart();
-        loadBetStats();
-        loadUpcomingFixtures();
-
-        if (currentPresetId) {
-            connectWebSocket(currentPresetId); }});
-
-    function initWidgetChart() {
-        const ctx = document.getElementById('widgetBankrollChart').getContext('2d');
-        widgetChartInstance = new Chart(ctx, {
-            type: 'line',
-            data: {
-                datasets: [{
-                    label: 'Bankroll',
-                    data: [],
-                    borderColor: '#22c55e',
-                    backgroundColor: 'rgba(34, 197, 94, 0.1)',
-                    borderWidth: 2,
-                    pointRadius: 1,
-                    tension: 0.1,
-                    fill: true
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: {
-                    x: {
-                        type: 'time',
-                        time: {
-                            unit: 'day',
-                            tooltipFormat: 'PP'
-                        },
-                        grid: { color: 'rgba(255, 255, 255, 0.05)' },
-                        ticks: { maxTicksLimit: 5 }},
-                    y: {
-                        grid: { color: 'rgba(255, 255, 255, 0.05)' },
-                        ticks: { maxTicksLimit: 5 }}
-                },
-                plugins: {
-                    legend: { display: false },
-                    tooltip: {
-                        callbacks: {
-                            label: function (context) {
-                                return 'Balance: ' + context.parsed.y.toFixed(2); }}}}}});
+<!-- Config for JS -->
+<script id="dashboard-config" type="application/json">
+    {
+        "currentPresetId": {% if first_preset %}{{ first_preset.id }}{% else %}null{% endif %},
+        "currentDefaultStake": {% if first_preset %}{{ first_preset.default_stake or 10 }}{% else %}10{% endif %},
+        "currentPresetAfterTradeAction": {% if first_preset %}"{{ first_preset.after_trade_action or 'none' }}"{% else %}"none"{% endif %},
+        "initialConfig": {% if first_preset %}{{ (first_preset.other_config or {}) | tojson | safe }}{% else %}{}{% endif %}
     }
-
-    async function loadBetStats() {
-        try {
-            const response = await fetch('/api/dashboard/bet-stats');
-            if (!response.ok) return;
-
-            const data = await response.json();
-
-            document.getElementById('widget-total-bets').textContent = data.total_bets;
-
-            const roiEl = document.getElementById('widget-roi');
-            roiEl.textContent = data.roi.toFixed(1) + '%';
-            roiEl.classList.remove('text-success', 'text-error');
-            roiEl.classList.add(data.roi >= 0 ? 'text-success' : 'text-error');
-
-            document.getElementById('widget-win-rate').textContent = data.win_rate.toFixed(1) + '%';
-
-            if (widgetChartInstance) {
-                widgetChartInstance.data.datasets[0].data = data.chart_data;
-                widgetChartInstance.update(); }} catch (e) {
-            console.error('Failed to load bet stats:', e); }}
-
-    async function loadUpcomingFixtures() {
-        try {
-            const response = await fetch('/api/dashboard/upcoming-fixtures');
-            if (!response.ok) return;
-
-            const fixtures = await response.json();
-            const container = document.getElementById('fixtures-list');
-
-            if (fixtures.length === 0) {
-                container.innerHTML = '<div class="text-center py-4 text-sm opacity-70">No upcoming fixtures</div>';
-                return;
-            }
-
-            // Helper function to escape HTML
-            function escapeHtml(text) {
-                const div = document.createElement('div');
-                div.textContent = text;
-                return div.innerHTML;
-            }
-
-            container.innerHTML = fixtures.map(fixture => {
-                const date = new Date(fixture.commence_time);
-                const isLive = fixture.is_live;
-                const timeStr = isLive ? 'LIVE' : date.toLocaleString('en-US', {
-                    month: 'short',
-                    day: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit'
-                });
-                const gmtTime = fixture.commence_time_utc || '';
-
-                return `
-                    <div class="p-2 bg-base-200 rounded-lg hover:bg-base-300 transition-colors">
-                        <div class="flex justify-between items-start text-xs">
-                            <div class="flex-1">
-                                <div class="font-semibold">${escapeHtml(fixture.home_team)} vs ${escapeHtml(fixture.away_team)}</div>
-                                <div class="opacity-70 text-[10px]">${escapeHtml(fixture.league_title)}</div>
-                            </div>
-                            <div class="text-right">
-                                ${isLive ? '<span class="badge badge-error badge-xs">LIVE</span>' : ''}
-                                <div class="opacity-70 mt-1 tooltip tooltip-left" data-tip="${escapeHtml(gmtTime)}">
-                                    ${escapeHtml(timeStr)}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                `;
-            }).join('');
-        } catch (e) {
-            console.error('Failed to load fixtures:', e); }}
-
-    function changePreset(presetId, presetName, newSortCol, newSortDir, newDefaultStake, newAfterTradeAction) {
-        window.currentPresetId = presetId;
-        document.getElementById('selected-preset-name').textContent = presetName;
-
-        if (newSortCol) sortCol = newSortCol;
-        if (newSortDir) sortDir = newSortDir;
-        if (newDefaultStake) window.currentDefaultStake = parseFloat(newDefaultStake);
-        if (newAfterTradeAction) window.currentPresetAfterTradeAction = newAfterTradeAction;
-
-        // Close the dropdown
-        document.activeElement.blur();
-
-        // Reconnect websocket
-        if (websocket) {
-            websocket.close();
-        }
-        connectWebSocket(presetId);
-    }
-
-    function connectWebSocket(presetId) {
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${protocol}//${window.location.host}/ws/tradefeed/${presetId}`;
-
-        websocket = new WebSocket(wsUrl);
-
-        websocket.onopen = () => {
-            console.log('WebSocket connected');
-            const indicator = document.getElementById('ws-indicator');
-            indicator.classList.remove('status-disconnected');
-            indicator.classList.add('status-connected');
-            indicator.setAttribute('data-tip', 'Connected');
-
-            clearTimeout(reconnectTimeout);
-        };
-
-        websocket.onmessage = (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                updateTradeFeed(data);
-            } catch (e) {
-                console.error('Failed to parse WebSocket message:', e); }};
-
-        websocket.onerror = (error) => {
-            console.error('WebSocket error:', error);
-        };
-
-        websocket.onclose = () => {
-            console.log('WebSocket disconnected');
-            const indicator = document.getElementById('ws-indicator');
-            indicator.classList.remove('status-connected');
-            indicator.classList.add('status-disconnected');
-            indicator.setAttribute('data-tip', 'Disconnected - Reconnecting...');
-
-            // Attempt to reconnect after 3 seconds
-            reconnectTimeout = setTimeout(() => {
-                if (window.currentPresetId) {
-                    connectWebSocket(window.currentPresetId); }}, 3000);
-        };
-    }
-
-    function updateTradeFeed(data) {
-        const tbody = document.getElementById('trade-feed-body');
-
-        // WebSocket sends 'opportunities', not 'odds'
-        const opportunities = data.opportunities || [];
-
-        if (opportunities.length === 0) {
-            tbody.innerHTML = `
-                <tr>
-                    <td colspan="6" class="text-center py-6 text-sm opacity-70">
-                        No trades available for this preset
-                    </td>
-                </tr>
-            `;
-            return;
-        }
-
-        // Helper function to escape HTML
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-
-        // Dynamic sorting based on preset config
-        const sortedOdds = [...opportunities].sort((a, b) => {
-            let valA = a[sortCol];
-            let valB = b[sortCol];
-
-            // Handle case-insensitive string compare
-            if (typeof valA === 'string') valA = valA.toLowerCase();
-            if (typeof valB === 'string') valB = valB.toLowerCase();
-
-            // Handle nulls
-            if (valA === null && valB === null) return 0;
-            if (valA === null) return 1;
-            if (valB === null) return -1;
-
-            if (valA < valB) return sortDir === 'asc' ? -1 : 1;
-            if (valA > valB) return sortDir === 'asc' ? 1 : -1;
-            return 0;
-        });
-
-        // Take top 20 for dashboard
-        const displayOdds = sortedOdds.slice(0, 20);
-
-        tbody.innerHTML = displayOdds.map(odd => {
-            // Use start_time instead of event_commence_time
-            const eventTime = new Date(odd.start_time);
-            const dateStr = eventTime.toLocaleString('en-US', {
-                month: 'short',
-                day: 'numeric'
-            });
-            const timeStr = eventTime.toLocaleString('en-US', {
-                hour: '2-digit',
-                minute: '2-digit'
-            });
-            const gmtTime = eventTime.toISOString().replace('T', ' ').substring(0, 16) + ' UTC';
-
-            // Check for odds change
-            const oddKey = `${odd.event_id}_${odd.bookmaker_key}_${odd.market}_${odd.selection}`;
-            const prevPrice = previousOdds[oddKey];
-            let flashClass = '';
-
-            if (prevPrice !== undefined && prevPrice != odd.price) {
-                flashClass = odd.price > prevPrice ? 'flash-increase' : 'flash-decrease';
-            }
-            previousOdds[oddKey] = odd.price;
-
-            // Calculate edge display
-            const edgePercentage = odd.edge !== null ? (odd.edge * 100) : null;
-            const edgeColor = (edgePercentage !== null && edgePercentage > 0) ? 'text-success' : 'text-error';
-            const edgeDisplay = edgePercentage !== null ? ((edgePercentage > 0 ? '+' : '') + edgePercentage.toFixed(1) + '%') : '-';
-
-            // Calculate probability (round to whole number)
-            const probability = odd.implied_probability ? Math.round(odd.implied_probability * 100) : Math.round((1 / odd.price) * 100);
-
-            // Format selection with capitalization and point
-            const selectionDisplay = odd.selection.charAt(0).toUpperCase() + odd.selection.slice(1).toLowerCase();
-            const pointDisplay = odd.point !== null && odd.point !== undefined ? ` (${odd.point > 0 ? '+' : ''}${odd.point})` : '';
-            const fullSelection = `${selectionDisplay}${pointDisplay}`;
-
-            // Market key uppercase
-            const marketUpper = odd.market.toUpperCase();
-
-            // Prepare item data for modal
-            const itemJson = JSON.stringify(odd).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-
-            return `
-                <tr class="text-xs hover:bg-base-200 cursor-pointer" onclick='openBetModal(${itemJson})'>
-                    <td class="px-2 whitespace-nowrap">
-                        <div class="tooltip tooltip-right" data-tip="${escapeHtml(gmtTime)}">
-                            <div class="text-[10px] md:text-sm">${escapeHtml(dateStr)}</div>
-                            <div class="opacity-70 text-[9px] md:text-xs">${escapeHtml(timeStr)}</div>
-                        </div>
-                    </td>
-                    <td class="px-2">
-                        <div class="font-semibold">${escapeHtml(odd.home)} vs ${escapeHtml(odd.away)}</div>
-                        <div class="opacity-70 text-[10px]">${escapeHtml(marketUpper)} - ${escapeHtml(fullSelection)}</div>
-                    </td>
-                    <td class="px-2 text-center font-mono text-info ${flashClass}">${Number(odd.price).toFixed(2)}</td>
-                    <td class="px-2 text-center font-mono opacity-70">${probability}%</td>
-                    <td class="px-2 text-center font-mono ${edgeColor}">${edgeDisplay}</td>
-                    <td class="px-2 text-center">
-                        <button class="btn btn-xs btn-primary" onclick="event.stopPropagation(); openBetModal(${itemJson})">Bet</button>
-                    </td>
-                </tr>
-            `;
-        }).join('');
-    }
-
-    // Refresh data periodically
-    setInterval(loadBetStats, 60000); // Every minute
-    setInterval(loadUpcomingFixtures, 60000); // Every minute
-
-    // Bet Modal Functions removed - now in static/js/bet_modal.js
 </script>
+
+<!-- External Dashboard Logic -->
+<script src="{{ url_for('static', path='js/dashboard.js') }}"></script>
 
 <!-- Betting Modal -->
 {% include 'components/bet_modal.html' %}
