@@ -322,6 +322,7 @@ class AutoTradeService:
                 
                 # Mark bet as placed without calling API
                 bet.status = "placed"
+                # Use synthetic external_id to indicate this is a simulated bet
                 bet.external_id = f"SIM-{datetime.now(timezone.utc).timestamp()}"
                 
                 # Save bet to database (balance is not affected)

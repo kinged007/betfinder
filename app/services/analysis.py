@@ -9,6 +9,14 @@ from app.db.models import Event, Market, Odds, Bookmaker
 
 logger = logging.getLogger(__name__)
 
+
+def calculate_implied_probability(odds: float) -> float:
+    """Calculate implied probability from decimal odds."""
+    if odds <= 0:
+        return 0.0
+    return 1.0 / odds
+
+
 class OddsAnalysisService:
     @staticmethod
     async def calculate_benchmark_values(db: AsyncSession):
@@ -95,22 +103,22 @@ class OddsAnalysisService:
                                 o.true_odds = 1.0 / benchmark_prob
                                 o.margin = bk_margin # Store this bk's margin
                             else:
-                                # If no Pinnacle benchmark available, calculate implied probability from own odds
+                                # If no Pinnacle benchmark available, use implied probability from own odds
                                 if not o.implied_probability:
-                                    o.implied_probability = 1.0 / o.price
+                                    o.implied_probability = calculate_implied_probability(o.price)
                                 o.margin = bk_margin
                             db.add(o)
                 else:
                     # No Pinnacle odds for this market - calculate implied probability for all bookmakers
                     for bk_id, bk_odds in odds_by_bk.items():
                         # Calculate this bookmaker's margin
-                        bk_total_prob = sum(1.0 / o.price for o in bk_odds)
+                        bk_total_prob = sum(calculate_implied_probability(o.price) for o in bk_odds)
                         bk_margin = bk_total_prob - 1.0
                         
                         for o in bk_odds:
                             # Calculate implied probability from the bookmaker's own odds
                             if not o.implied_probability:
-                                o.implied_probability = 1.0 / o.price
+                                o.implied_probability = calculate_implied_probability(o.price)
                             o.margin = bk_margin
                             db.add(o)
 

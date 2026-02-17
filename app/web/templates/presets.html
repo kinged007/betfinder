@@ -489,7 +489,7 @@
                         </div>
                         <div class="form-control">
                             <label class="label"><span class="label-text">Max Stake (EUR)</span></label>
-                            <input type="number" step="1" name="max_stake_kelly" class="input input-bordered input-sm"
+                            <input type="number" step="1" name="max_stake" class="input input-bordered input-sm"
                                 placeholder="Optional cap" />
                             <label class="label"><span class="label-text-alt">Leave empty for no limit</span></label>
                         </div>
@@ -810,8 +810,12 @@
         form.querySelector('[name="default_stake"]').value = preset.default_stake || 10;
         form.querySelector('[name="percent_risk"]').value = preset.percent_risk || 10;
         form.querySelector('[name="kelly_multiplier"]').value = preset.kelly_multiplier || 1;
-        form.querySelector('[name="max_stake"]').value = preset.max_stake || '';
-        form.querySelector('[name="max_stake_kelly"]').value = preset.max_stake || '';
+        
+        // Set max_stake for both risk and kelly fields (they share the same backend field)
+        const maxStakeInputs = form.querySelectorAll('[name="max_stake"]');
+        maxStakeInputs.forEach(input => {
+            input.value = preset.max_stake || '';
+        });
         
         form.querySelector('[name="after_trade_action"]').value = preset.after_trade_action;
 
@@ -874,10 +878,17 @@
         // Determine max_stake based on selected strategy
         const strategy = form.querySelector('[name="staking_strategy"]').value;
         let maxStake = null;
-        if (strategy === 'risk') {
-            maxStake = parseFloat(form.querySelector('[name="max_stake"]').value) || null;
-        } else if (strategy === 'kelly') {
-            maxStake = parseFloat(form.querySelector('[name="max_stake_kelly"]').value) || null;
+        
+        // Both risk and kelly strategies use the same max_stake field
+        if (strategy === 'risk' || strategy === 'kelly') {
+            const maxStakeInputs = form.querySelectorAll('[name="max_stake"]');
+            // Get the value from the currently visible max_stake field
+            for (const input of maxStakeInputs) {
+                if (!input.closest('.hidden')) {
+                    maxStake = parseFloat(input.value) || null;
+                    break;
+                }
+            }
         }
 
         // 1. Gather Data (Reuse submit logic manually to avoid touching ID)
@@ -946,10 +957,17 @@
         // Determine max_stake based on selected strategy
         const strategy = form.querySelector('[name="staking_strategy"]').value;
         let maxStake = null;
-        if (strategy === 'risk') {
-            maxStake = parseFloat(form.querySelector('[name="max_stake"]').value) || null;
-        } else if (strategy === 'kelly') {
-            maxStake = parseFloat(form.querySelector('[name="max_stake_kelly"]').value) || null;
+        
+        // Both risk and kelly strategies use the same max_stake field
+        if (strategy === 'risk' || strategy === 'kelly') {
+            const maxStakeInputs = form.querySelectorAll('[name="max_stake"]');
+            // Get the value from the currently visible max_stake field
+            for (const input of maxStakeInputs) {
+                if (!input.closest('.hidden')) {
+                    maxStake = parseFloat(input.value) || null;
+                    break;
+                }
+            }
         }
 
         const data = {
