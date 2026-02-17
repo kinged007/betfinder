@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% block content %}
+<script src="{{ url_for('static', path='js/stake_calculator.js') }}"></script>
 <script src="{{ url_for('static', path='js/bet_modal.js') }}"></script>
 
 <style>
@@ -228,6 +229,12 @@
         window.currentPresetId = presetId;
         window.currentPresetDefaultStake = "{{ current_preset.default_stake or 10 }}";
         window.currentPresetAfterTradeAction = "{{ current_preset.after_trade_action or 'none' }}";
+        
+        // Staking strategy configuration
+        window.currentPresetStakingStrategy = "{{ current_preset.staking_strategy or 'fixed' }}";
+        window.currentPresetPercentRisk = {{ current_preset.percent_risk or 'null' }};
+        window.currentPresetKellyMultiplier = {{ current_preset.kelly_multiplier or 'null' }};
+        window.currentPresetMaxStake = {{ current_preset.max_stake or 'null' }};
 
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const ws = new WebSocket(`${protocol}//${window.location.host}/ws/tradefeed/${presetId}`);

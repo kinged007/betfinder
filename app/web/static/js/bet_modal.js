@@ -107,17 +107,47 @@ function openBetModal(item) {
         setElText('modal-time-text', item.start_time);
     }
 
-    // Default Stake Logic
-    // Try to get from global variables if defined
-    let defaultStake = 10;
-    if (typeof window.currentDefaultStake !== 'undefined') {
-        defaultStake = window.currentDefaultStake;
-    } else if (typeof window.currentPresetDefaultStake !== 'undefined') {
-        defaultStake = parseFloat(window.currentPresetDefaultStake);
+    // Calculate stake using staking strategy
+    let calculatedStake = 10; // Default fallback
+    
+    try {
+        const strategy = window.currentPresetStakingStrategy || 'fixed';
+        const defaultStake = parseFloat(window.currentPresetDefaultStake) || 10;
+        const percentRisk = window.currentPresetPercentRisk;
+        const kellyMultiplier = window.currentPresetKellyMultiplier;
+        const maxStake = window.currentPresetMaxStake;
+        
+        // Get bankroll for the bookmaker (if available)
+        // This would need to be set when opening the modal or retrieved from window/global state
+        const bankroll = window.currentBookmakerBalance || 1000; // Fallback to 1000 if not available
+        
+        // Get probability - use implied_probability if available, otherwise calculate from odds
+        const probability = item.implied_probability || (item.price ? 1 / item.price : null);
+        const odds = item.price;
+        
+        // Calculate stake using the stake calculator function
+        if (typeof calculateStake === 'function') {
+            calculatedStake = calculateStake(
+                strategy,
+                defaultStake,
+                bankroll,
+                probability,
+                odds,
+                percentRisk,
+                kellyMultiplier,
+                maxStake
+            );
+        } else {
+            console.warn('calculateStake function not found, using default stake');
+            calculatedStake = defaultStake;
+        }
+    } catch (error) {
+        console.error('Error calculating stake:', error);
+        calculatedStake = parseFloat(window.currentPresetDefaultStake) || 10;
     }
 
-    // Check if element has value override
-    setElValue('modal-stake', defaultStake || 10);
+    // Set the calculated stake
+    setElValue('modal-stake', calculatedStake || 10);
 
     recalculateEdge();
     const modal = document.getElementById('bet-modal');
