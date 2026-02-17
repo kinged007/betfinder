@@ -172,6 +172,13 @@ class Preset(Base, TimestampMixin):
     
     # Betting Config
     default_stake: Mapped[Optional[float]] = mapped_column(Float, default=10.0)
+    simulate: Mapped[bool] = mapped_column(Boolean, default=False) # If true, bets are placed virtually (no API call, no balance check)
+    
+    # Staking Strategy
+    staking_strategy: Mapped[str] = mapped_column(String, default="fixed") # Options: fixed, risk, kelly
+    percent_risk: Mapped[Optional[float]] = mapped_column(Float, nullable=True) # For risk strategy: % of bankroll to risk
+    kelly_multiplier: Mapped[Optional[float]] = mapped_column(Float, nullable=True) # For kelly strategy: multiplier to reduce volatility
+    max_stake: Mapped[Optional[float]] = mapped_column(Float, nullable=True) # Maximum stake amount for risk/kelly strategies
     
     # UI/Logic Flags
     show_popular_leagues: Mapped[bool] = mapped_column(Boolean, default=False)

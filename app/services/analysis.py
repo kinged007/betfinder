@@ -58,44 +58,60 @@ class OddsAnalysisService:
                     odds_by_bk[odd.bookmaker_id].append(odd)
 
                 # 6. Process Pinnacle Benchmark
-                if pinnacle_id not in odds_by_bk:
-                    continue
-
-                pinnacle_market_odds = odds_by_bk[pinnacle_id]
-                
-                # Calculate Pinnacle Margin and Fair Probabilities
-                # Margin calculation: Sum(1/price) - 1
-                total_implied_prob = sum(1.0 / o.price for o in pinnacle_market_odds)
-                margin = total_implied_prob - 1.0
-                
-                # Fair Probabilities (normalized to 1.0)
-                fair_probs = {} # normalized_selection -> prob
-                for o in pinnacle_market_odds:
-                    fair_prob = (1.0 / o.price) / total_implied_prob
-                    fair_probs[o.normalized_selection] = fair_prob
+                if pinnacle_id in odds_by_bk:
+                    pinnacle_market_odds = odds_by_bk[pinnacle_id]
                     
-                    # Update Pinnacle odds with its own analysis
-                    o.margin = margin
-                    o.implied_probability = fair_prob
-                    o.true_odds = 1.0 / fair_prob
-                    db.add(o)
-
-                # 7. Apply to other bookmakers
-                for bk_id, bk_odds in odds_by_bk.items():
-                    if bk_id == pinnacle_id:
-                        continue
+                    # Calculate Pinnacle Margin and Fair Probabilities
+                    # Margin calculation: Sum(1/price) - 1
+                    total_implied_prob = sum(1.0 / o.price for o in pinnacle_market_odds)
+                    margin = total_implied_prob - 1.0
                     
-                    # Calculate this bookmaker's specific margin for info
-                    bk_total_prob = sum(1.0 / o.price for o in bk_odds)
-                    bk_margin = bk_total_prob - 1.0
+                    # Fair Probabilities (normalized to 1.0)
+                    fair_probs = {} # normalized_selection -> prob
+                    for o in pinnacle_market_odds:
+                        fair_prob = (1.0 / o.price) / total_implied_prob
+                        fair_probs[o.normalized_selection] = fair_prob
+                        
+                        # Update Pinnacle odds with its own analysis
+                        o.margin = margin
+                        o.implied_probability = fair_prob
+                        o.true_odds = 1.0 / fair_prob
+                        db.add(o)
 
-                    for o in bk_odds:
-                        # Find matching fair probability from benchmark
-                        benchmark_prob = fair_probs.get(o.normalized_selection)
-                        if benchmark_prob:
-                            o.implied_probability = benchmark_prob
-                            o.true_odds = 1.0 / benchmark_prob
-                            o.margin = bk_margin # Store this bk's margin
+                    # 7. Apply to other bookmakers
+                    for bk_id, bk_odds in odds_by_bk.items():
+                        if bk_id == pinnacle_id:
+                            continue
+                        
+                        # Calculate this bookmaker's specific margin for info
+                        bk_total_prob = sum(1.0 / o.price for o in bk_odds)
+                        bk_margin = bk_total_prob - 1.0
+
+                        for o in bk_odds:
+                            # Find matching fair probability from benchmark
+                            benchmark_prob = fair_probs.get(o.normalized_selection)
+                            if benchmark_prob:
+                                o.implied_probability = benchmark_prob
+                                o.true_odds = 1.0 / benchmark_prob
+                                o.margin = bk_margin # Store this bk's margin
+                            else:
+                                # If no Pinnacle benchmark available, calculate implied probability from own odds
+                                if not o.implied_probability:
+                                    o.implied_probability = 1.0 / o.price
+                                o.margin = bk_margin
+                            db.add(o)
+                else:
+                    # No Pinnacle odds for this market - calculate implied probability for all bookmakers
+                    for bk_id, bk_odds in odds_by_bk.items():
+                        # Calculate this bookmaker's margin
+                        bk_total_prob = sum(1.0 / o.price for o in bk_odds)
+                        bk_margin = bk_total_prob - 1.0
+                        
+                        for o in bk_odds:
+                            # Calculate implied probability from the bookmaker's own odds
+                            if not o.implied_probability:
+                                o.implied_probability = 1.0 / o.price
+                            o.margin = bk_margin
                             db.add(o)
 
         await db.commit()

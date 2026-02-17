@@ -14,6 +14,7 @@ from app.db.models import Preset, Bet, Bookmaker, PresetHiddenItem
 from app.services.analytics.trade_finder import TradeFinderService, TradeOpportunity
 from app.services.bookmakers.base import APIBookmaker, BookmakerFactory
 from app.services.notifications.manager import NotificationManager
+from app.services.stake_calculator import StakeCalculator
 
 logger = logging.getLogger(__name__)
 
@@ -232,16 +233,32 @@ class AutoTradeService:
         
         logger.debug(f"✓ Bookmaker has valid credentials")
         
-        # Check available balance
-        stake = preset.default_stake or 10.0
-        if bookmaker.balance < stake:
-            logger.warning(
-                f"❌ Insufficient balance for {bookmaker.key}. "
-                f"Required: {stake}, Available: {bookmaker.balance}"
-            )
-            return False
+        # Calculate stake using staking strategy
+        stake = StakeCalculator.calculate_stake(
+            strategy=preset.staking_strategy or "fixed",
+            default_stake=preset.default_stake or 10.0,
+            bankroll=bookmaker.balance,
+            probability=opportunity.odd.implied_probability,
+            odds=opportunity.odd.price,
+            percent_risk=preset.percent_risk,
+            kelly_multiplier=preset.kelly_multiplier,
+            max_stake=preset.max_stake
+        )
         
-        logger.debug(f"✓ Sufficient balance available ({bookmaker.balance} >= {stake})")
+        logger.info(f"Calculated stake: {stake:.2f} EUR using strategy '{preset.staking_strategy or 'fixed'}'")
+        
+        # Check available balance (skip if simulated trade)
+        if not preset.simulate:
+            if bookmaker.balance < stake:
+                logger.warning(
+                    f"❌ Insufficient balance for {bookmaker.key}. "
+                    f"Required: {stake}, Available: {bookmaker.balance}"
+                )
+                return False
+            
+            logger.debug(f"✓ Sufficient balance available ({bookmaker.balance} >= {stake})")
+        else:
+            logger.info(f"🎭 Simulated trade - skipping balance check")
         
         # Create snapshots
         event_snapshot = {
@@ -294,50 +311,70 @@ class AutoTradeService:
             return False
 
         try:
-            # Place bet via bookmaker API
-            logger.info(
-                f"Placing bet: {opportunity.event.home_team} vs {opportunity.event.away_team}, "
-                f"{opportunity.market.key}, {opportunity.odd.selection} @ {opportunity.odd.price}, "
-                f"Stake: {stake}"
-            )
-            
-            result = await bookmaker_instance.place_bet(bet)
-            
-            logger.info(f"Bet placement API response: {result}")
-            
-            if result.get("success"):
-                # Update bet with response data
+            # Handle simulated vs real bet placement
+            if preset.simulate:
+                # Simulated trade - don't call API, just register the trade
+                logger.info(
+                    f"🎭 Simulating bet placement: {opportunity.event.home_team} vs {opportunity.event.away_team}, "
+                    f"{opportunity.market.key}, {opportunity.odd.selection} @ {opportunity.odd.price}, "
+                    f"Stake: {stake}"
+                )
+                
+                # Mark bet as placed without calling API
                 bet.status = "placed"
-                bet.bet_id = result.get("bet_id")
-                bet.response_data = result
+                bet.external_id = f"SIM-{datetime.now(timezone.utc).timestamp()}"
                 
-                # Save bet to database
+                # Save bet to database (balance is not affected)
                 db.add(bet)
-                
-                # Deduct stake from bookmaker balance
-                bookmaker.balance -= stake
-                
                 await db.commit()
                 await db.refresh(bet)
                 
-                logger.info(f"✅ Bet placed successfully. Bet ID: {bet.id}, Bookmaker Bet ID: {bet.bet_id}")
+                logger.info(f"✅ Simulated bet registered successfully. Bet ID: {bet.id}")
                 
-                # Post-trade actions (Hide opportunity)
-                await AutoTradeService._process_after_trade_actions(db, preset, opportunity)
-                
-                # Send Notification
-                try:
-                    notifier = NotificationManager(db)
-                    await notifier.send_bet_notification(preset, bet)
-                except Exception as e:
-                    logger.error(f"Failed to send bet notification: {e}", exc_info=True)
-
-                return True
             else:
-                error_msg = result.get('error') or result.get('message') or 'Unknown error'
-                logger.warning(f"❌ Bet placement failed: {error_msg}")
-                logger.debug(f"Full response: {result}")
-                return False
+                # Real bet placement via API
+                logger.info(
+                    f"Placing bet: {opportunity.event.home_team} vs {opportunity.event.away_team}, "
+                    f"{opportunity.market.key}, {opportunity.odd.selection} @ {opportunity.odd.price}, "
+                    f"Stake: {stake}"
+                )
+                
+                result = await bookmaker_instance.place_bet(bet)
+                
+                logger.info(f"Bet placement API response: {result}")
+                
+                if result.get("success"):
+                    # Update bet with response data
+                    bet.status = "placed"
+                    bet.external_id = result.get("bet_id")
+                    
+                    # Save bet to database
+                    db.add(bet)
+                    
+                    # Deduct stake from bookmaker balance
+                    bookmaker.balance -= stake
+                    
+                    await db.commit()
+                    await db.refresh(bet)
+                    
+                    logger.info(f"✅ Bet placed successfully. Bet ID: {bet.id}, Bookmaker Bet ID: {bet.external_id}")
+                else:
+                    error_msg = result.get('error') or result.get('message') or 'Unknown error'
+                    logger.warning(f"❌ Bet placement failed: {error_msg}")
+                    logger.debug(f"Full response: {result}")
+                    return False
+            
+            # Post-trade actions (Hide opportunity)
+            await AutoTradeService._process_after_trade_actions(db, preset, opportunity)
+            
+            # Send Notification
+            try:
+                notifier = NotificationManager(db)
+                await notifier.send_bet_notification(preset, bet)
+            except Exception as e:
+                logger.error(f"Failed to send bet notification: {e}", exc_info=True)
+
+            return True
                 
         except Exception as e:
             logger.error(f"Exception while placing bet: {e}", exc_info=True)

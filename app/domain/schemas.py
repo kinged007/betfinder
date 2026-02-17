@@ -90,6 +90,14 @@ class PresetBase(BaseModel):
     hours_before_min: Optional[int] = None
     hours_before_max: Optional[int] = None
     default_stake: Optional[float] = None
+    simulate: bool = False
+    
+    # Staking Strategy
+    staking_strategy: str = "fixed"  # Options: fixed, risk, kelly
+    percent_risk: Optional[float] = None  # For risk strategy: % of bankroll to risk
+    kelly_multiplier: Optional[float] = None  # For kelly strategy: multiplier to reduce volatility
+    max_stake: Optional[float] = None  # Maximum stake amount for risk/kelly strategies
+    
     show_popular_leagues: bool = False
     after_trade_action: str = "keep"
     other_config: Optional[Dict[str, Any]] = None
