@@ -98,8 +98,8 @@
                     <div class="flex flex-col items-center gap-1">
                         <span class="text-xs md:text-sm font-semibold">Auto-Trade</span>
                         <label class="cursor-pointer flex items-center gap-2 bg-base-200 rounded-lg p-2">
-                            <input type="checkbox" name="auto_trade"
-                                class="toggle toggle-xs md:toggle-sm toggle-primary" />
+                            <input type="checkbox" name="auto_trade" id="auto_trade_toggle"
+                                class="toggle toggle-xs md:toggle-sm toggle-primary" onchange="toggleSimulate()" />
                             <span class="text-xs md:text-sm hidden sm:inline">Enabled</span>
                         </label>
                     </div>
@@ -113,6 +113,19 @@
                             <span class="text-xs md:text-sm hidden sm:inline">Ignore</span>
                         </label>
                     </div>
+                </div>
+            </div>
+
+            <!-- Simulate Toggle (shown when Auto-Trade is enabled) -->
+            <div id="simulate_section" class="hidden mt-4">
+                <div class="form-control">
+                    <label class="label cursor-pointer justify-start gap-3">
+                        <input type="checkbox" name="simulate" class="toggle toggle-sm toggle-secondary" />
+                        <div>
+                            <span class="label-text font-semibold">Simulate Trades</span>
+                            <p class="text-xs opacity-60">Place virtual bets without API calls or balance deduction</p>
+                        </div>
+                    </label>
                 </div>
             </div>
 
@@ -426,13 +439,63 @@
                     </div>
                 </div>
 
-                <!-- Trading Settings -->
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <!-- Staking Configuration -->
+                <div class="space-y-4">
+                    <h4 class="font-semibold">Staking Configuration</h4>
+                    
+                    <!-- Strategy Selection -->
                     <div class="form-control">
-                        <label class="label"><span class="label-text">Default Stake (EUR)</span></label>
-                        <input type="number" step="1" name="default_stake" class="input input-bordered input-sm"
-                            value="10" placeholder="10" />
+                        <label class="label"><span class="label-text">Staking Strategy</span></label>
+                        <select name="staking_strategy" id="staking_strategy" class="select select-bordered select-sm" onchange="toggleStakingFields()">
+                            <option value="fixed">Fixed Stake</option>
+                            <option value="risk">Risk-Based (% of Bankroll)</option>
+                            <option value="kelly">Kelly Criterion</option>
+                        </select>
                     </div>
+                    
+                    <!-- Fixed Strategy Fields -->
+                    <div id="fixed_fields" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="form-control">
+                            <label class="label"><span class="label-text">Default Stake (EUR)</span></label>
+                            <input type="number" step="1" name="default_stake" class="input input-bordered input-sm"
+                                value="10" placeholder="10" />
+                        </div>
+                        <div></div> <!-- Empty spacer -->
+                    </div>
+                    
+                    <!-- Risk Strategy Fields -->
+                    <div id="risk_fields" class="hidden grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="form-control">
+                            <label class="label"><span class="label-text">Percent Risk (%)</span></label>
+                            <input type="number" step="0.1" name="percent_risk" class="input input-bordered input-sm"
+                                value="10" placeholder="10" />
+                            <label class="label"><span class="label-text-alt">% of available balance to risk per bet</span></label>
+                        </div>
+                        <div class="form-control">
+                            <label class="label"><span class="label-text">Max Stake (EUR)</span></label>
+                            <input type="number" step="1" name="max_stake" class="input input-bordered input-sm"
+                                placeholder="Optional cap" />
+                            <label class="label"><span class="label-text-alt">Leave empty for no limit</span></label>
+                        </div>
+                    </div>
+                    
+                    <!-- Kelly Strategy Fields -->
+                    <div id="kelly_fields" class="hidden grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="form-control">
+                            <label class="label"><span class="label-text">Kelly Multiplier</span></label>
+                            <input type="number" step="0.1" name="kelly_multiplier" class="input input-bordered input-sm"
+                                value="1" placeholder="1" />
+                            <label class="label"><span class="label-text-alt">Multiplier to reduce volatility (0.5 = half Kelly)</span></label>
+                        </div>
+                        <div class="form-control">
+                            <label class="label"><span class="label-text">Max Stake (EUR)</span></label>
+                            <input type="number" step="1" name="max_stake_kelly" class="input input-bordered input-sm"
+                                placeholder="Optional cap" />
+                            <label class="label"><span class="label-text-alt">Leave empty for no limit</span></label>
+                        </div>
+                    </div>
+                    
+                    <!-- After Trade Action -->
                     <div class="form-control">
                         <label class="label"><span class="label-text">After Trade Action</span></label>
                         <select name="after_trade_action" class="select select-bordered select-sm">
@@ -619,6 +682,37 @@
         }
     }
 
+    function toggleSimulate() {
+        const autoTradeChecked = document.getElementById('auto_trade_toggle').checked;
+        const simulateSection = document.getElementById('simulate_section');
+        if (autoTradeChecked) {
+            simulateSection.classList.remove('hidden');
+        } else {
+            simulateSection.classList.add('hidden');
+        }
+    }
+
+    function toggleStakingFields() {
+        const strategy = document.getElementById('staking_strategy').value;
+        const fixedFields = document.getElementById('fixed_fields');
+        const riskFields = document.getElementById('risk_fields');
+        const kellyFields = document.getElementById('kelly_fields');
+        
+        // Hide all fields first
+        fixedFields.classList.add('hidden');
+        riskFields.classList.add('hidden');
+        kellyFields.classList.add('hidden');
+        
+        // Show appropriate fields based on strategy
+        if (strategy === 'fixed') {
+            fixedFields.classList.remove('hidden');
+        } else if (strategy === 'risk') {
+            riskFields.classList.remove('hidden');
+        } else if (strategy === 'kelly') {
+            kellyFields.classList.remove('hidden');
+        }
+    }
+
     function filterLeagues() {
         const selectedSports = Array.from(document.querySelectorAll('input[name="sports"]:checked')).map(cb => cb.value);
         const leagueLabels = document.querySelectorAll('#leagues-list label');
@@ -650,6 +744,11 @@
         form.querySelector('[name="active"]').checked = true;
         form.querySelector('[name="ignore_benchmarks"]').checked = false;
 
+        // Reset staking fields
+        document.getElementById('staking_strategy').value = 'fixed';
+        toggleStakingFields();
+        toggleSimulate();
+
         // Reset displays
         updateSportsDisplay();
         updateLeaguesDisplay();
@@ -675,6 +774,7 @@
         form.querySelector('[name="active"]').checked = preset.active;
         form.querySelector('[name="auto_trade"]').checked = preset.auto_trade || false;
         form.querySelector('[name="ignore_benchmarks"]').checked = preset.ignore_benchmarks || false;
+        form.querySelector('[name="simulate"]').checked = preset.simulate || false;
 
         // Set checkboxes for multi-selects
         const setCheckboxes = (name, vals) => {
@@ -703,7 +803,16 @@
 
         form.querySelector('[name="hours_before_min"]').value = preset.hours_before_min;
         form.querySelector('[name="hours_before_max"]').value = preset.hours_before_max;
-        form.querySelector('[name="default_stake"]').value = preset.default_stake;
+        
+        // Set staking fields
+        const stakingStrategy = preset.staking_strategy || 'fixed';
+        document.getElementById('staking_strategy').value = stakingStrategy;
+        form.querySelector('[name="default_stake"]').value = preset.default_stake || 10;
+        form.querySelector('[name="percent_risk"]').value = preset.percent_risk || 10;
+        form.querySelector('[name="kelly_multiplier"]').value = preset.kelly_multiplier || 1;
+        form.querySelector('[name="max_stake"]').value = preset.max_stake || '';
+        form.querySelector('[name="max_stake_kelly"]').value = preset.max_stake || '';
+        
         form.querySelector('[name="after_trade_action"]').value = preset.after_trade_action;
 
         // Populate Other Config
@@ -729,6 +838,8 @@
 
         toggleLeagues();
         toggleTimeWindow(!preset.is_live);
+        toggleStakingFields();
+        toggleSimulate();
         filterLeagues();
         preset_modal.showModal();
     }
@@ -759,6 +870,15 @@
         // Let's reuse submitPreset logic but as a POST with modified name.
 
         const form = document.getElementById('createPresetForm');
+        
+        // Determine max_stake based on selected strategy
+        const strategy = form.querySelector('[name="staking_strategy"]').value;
+        let maxStake = null;
+        if (strategy === 'risk') {
+            maxStake = parseFloat(form.querySelector('[name="max_stake"]').value) || null;
+        } else if (strategy === 'kelly') {
+            maxStake = parseFloat(form.querySelector('[name="max_stake_kelly"]').value) || null;
+        }
 
         // 1. Gather Data (Reuse submit logic manually to avoid touching ID)
         const data = {
@@ -770,6 +890,7 @@
             selections: Array.from(document.querySelectorAll('input[name="selections"]:checked')).map(cb => cb.value),
             active: form.querySelector('[name="active"]').checked,
             auto_trade: form.querySelector('[name="auto_trade"]').checked,
+            simulate: form.querySelector('[name="simulate"]').checked,
             ignore_benchmarks: form.querySelector('[name="ignore_benchmarks"]').checked,
             show_popular_leagues: form.querySelector('[name="show_popular_leagues"]').checked,
             min_odds: parseFloat(form.querySelector('[name="min_odds"]').value) || null,
@@ -781,7 +902,11 @@
             is_live: form.querySelector('input[name="is_live"]:checked').value === 'true',
             hours_before_min: parseInt(form.querySelector('[name="hours_before_min"]').value) || null,
             hours_before_max: parseInt(form.querySelector('[name="hours_before_max"]').value) || null,
+            staking_strategy: strategy,
             default_stake: parseFloat(form.querySelector('[name="default_stake"]').value) || 10.0,
+            percent_risk: parseFloat(form.querySelector('[name="percent_risk"]').value) || null,
+            kelly_multiplier: parseFloat(form.querySelector('[name="kelly_multiplier"]').value) || null,
+            max_stake: maxStake,
             after_trade_action: form.querySelector('[name="after_trade_action"]').value,
             other_config: {}
         };
@@ -818,6 +943,15 @@
         const method = editId ? 'PATCH' : 'POST';
         const url = editId ? `/api/v1/presets/${editId}` : '/api/v1/presets';
 
+        // Determine max_stake based on selected strategy
+        const strategy = form.querySelector('[name="staking_strategy"]').value;
+        let maxStake = null;
+        if (strategy === 'risk') {
+            maxStake = parseFloat(form.querySelector('[name="max_stake"]').value) || null;
+        } else if (strategy === 'kelly') {
+            maxStake = parseFloat(form.querySelector('[name="max_stake_kelly"]').value) || null;
+        }
+
         const data = {
             name: form.querySelector('[name="name"]').value,
             sports: Array.from(document.querySelectorAll('input[name="sports"]:checked')).map(cb => cb.value),
@@ -827,6 +961,7 @@
             selections: Array.from(document.querySelectorAll('input[name="selections"]:checked')).map(cb => cb.value),
             active: form.querySelector('[name="active"]').checked,
             auto_trade: form.querySelector('[name="auto_trade"]').checked,
+            simulate: form.querySelector('[name="simulate"]').checked,
             ignore_benchmarks: form.querySelector('[name="ignore_benchmarks"]').checked,
             show_popular_leagues: form.querySelector('[name="show_popular_leagues"]').checked,
             min_odds: parseFloat(form.querySelector('[name="min_odds"]').value) || null,
@@ -838,10 +973,15 @@
             is_live: form.querySelector('input[name="is_live"]:checked').value === 'true',
             hours_before_min: parseInt(form.querySelector('[name="hours_before_min"]').value) || null,
             hours_before_max: parseInt(form.querySelector('[name="hours_before_max"]').value) || null,
+            staking_strategy: strategy,
             default_stake: parseFloat(form.querySelector('[name="default_stake"]').value) || 10.0,
+            percent_risk: parseFloat(form.querySelector('[name="percent_risk"]').value) || null,
+            kelly_multiplier: parseFloat(form.querySelector('[name="kelly_multiplier"]').value) || null,
+            max_stake: maxStake,
             after_trade_action: form.querySelector('[name="after_trade_action"]').value,
             other_config: {}
         };
+
 
         // Collect Other Config
         document.querySelectorAll('[data-other-config="true"]').forEach(el => {
