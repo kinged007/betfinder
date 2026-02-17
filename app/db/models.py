@@ -170,24 +170,12 @@ class Preset(Base, TimestampMixin):
     hours_before_min: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     hours_before_max: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     
-    # Betting Configuration
-    # - default_stake: Fixed stake amount in EUR (used by 'fixed' strategy)
-    # - simulate: If True, bets are placed virtually (no API call, no balance check)
-    # Staking Strategy Configuration:
-    # - staking_strategy: Options are 'fixed', 'risk', 'kelly'
-    # - percent_risk: For 'risk' strategy - percentage of bankroll to risk per bet
-    # - kelly_multiplier: For 'kelly' strategy - multiplier to reduce volatility (e.g., 0.5 = half Kelly)
-    # - max_stake: Maximum stake amount cap for 'risk' and 'kelly' strategies
+    # Betting Config
     default_stake: Mapped[Optional[float]] = mapped_column(Float, default=10.0)
-    simulate: Mapped[bool] = mapped_column(Boolean, default=False)
-    staking_strategy: Mapped[str] = mapped_column(String, default="fixed")
-    percent_risk: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    kelly_multiplier: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    max_stake: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     
     # UI/Logic Flags
     show_popular_leagues: Mapped[bool] = mapped_column(Boolean, default=False)
-    after_trade_action: Mapped[str] = mapped_column(String, default="keep")
+    after_trade_action: Mapped[str] = mapped_column(String, default="keep") # remove_match, remove_trade, keep, remove_line
     
     other_config: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     

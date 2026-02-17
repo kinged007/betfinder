@@ -233,22 +233,30 @@ class AutoTradeService:
         
         logger.debug(f"✓ Bookmaker has valid credentials")
         
+        # Get staking configuration from other_config
+        other_config = preset.other_config or {}
+        staking_strategy = other_config.get('staking_strategy', 'fixed')
+        percent_risk = other_config.get('percent_risk')
+        kelly_multiplier = other_config.get('kelly_multiplier')
+        max_stake = other_config.get('max_stake')
+        simulate = other_config.get('simulate', False)
+        
         # Calculate stake using staking strategy
         stake = StakeCalculator.calculate_stake(
-            strategy=preset.staking_strategy or "fixed",
+            strategy=staking_strategy,
             default_stake=preset.default_stake or 10.0,
             bankroll=bookmaker.balance,
             probability=opportunity.odd.implied_probability,
             odds=opportunity.odd.price,
-            percent_risk=preset.percent_risk,
-            kelly_multiplier=preset.kelly_multiplier,
-            max_stake=preset.max_stake
+            percent_risk=percent_risk,
+            kelly_multiplier=kelly_multiplier,
+            max_stake=max_stake
         )
         
-        logger.info(f"Calculated stake: {stake:.2f} EUR using strategy '{preset.staking_strategy or 'fixed'}'")
+        logger.info(f"Calculated stake: {stake:.2f} EUR using strategy '{staking_strategy}'")
         
         # Check available balance (skip if simulated trade)
-        if not preset.simulate:
+        if not simulate:
             if bookmaker.balance < stake:
                 logger.warning(
                     f"❌ Insufficient balance for {bookmaker.key}. "
@@ -312,7 +320,7 @@ class AutoTradeService:
 
         try:
             # Handle simulated vs real bet placement
-            if preset.simulate:
+            if simulate:
                 # Simulated trade - don't call API, just register the trade
                 logger.info(
                     f"🎭 Simulating bet placement: {opportunity.event.home_team} vs {opportunity.event.away_team}, "

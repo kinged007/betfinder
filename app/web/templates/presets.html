@@ -774,7 +774,10 @@
         form.querySelector('[name="active"]').checked = preset.active;
         form.querySelector('[name="auto_trade"]').checked = preset.auto_trade || false;
         form.querySelector('[name="ignore_benchmarks"]').checked = preset.ignore_benchmarks || false;
-        form.querySelector('[name="simulate"]').checked = preset.simulate || false;
+        
+        // Get staking config from other_config
+        const otherConfig = preset.other_config || {};
+        form.querySelector('[name="simulate"]').checked = otherConfig.simulate || false;
 
         // Set checkboxes for multi-selects
         const setCheckboxes = (name, vals) => {
@@ -804,17 +807,17 @@
         form.querySelector('[name="hours_before_min"]').value = preset.hours_before_min;
         form.querySelector('[name="hours_before_max"]').value = preset.hours_before_max;
         
-        // Set staking fields
-        const stakingStrategy = preset.staking_strategy || 'fixed';
+        // Set staking fields from other_config
+        const stakingStrategy = otherConfig.staking_strategy || 'fixed';
         document.getElementById('staking_strategy').value = stakingStrategy;
         form.querySelector('[name="default_stake"]').value = preset.default_stake || 10;
-        form.querySelector('[name="percent_risk"]').value = preset.percent_risk || 10;
-        form.querySelector('[name="kelly_multiplier"]').value = preset.kelly_multiplier || 1;
+        form.querySelector('[name="percent_risk"]').value = otherConfig.percent_risk || 10;
+        form.querySelector('[name="kelly_multiplier"]').value = otherConfig.kelly_multiplier || 1;
         
         // Set max_stake for both risk and kelly fields (they share the same backend field)
         const maxStakeInputs = form.querySelectorAll('[name="max_stake"]');
         maxStakeInputs.forEach(input => {
-            input.value = preset.max_stake || '';
+            input.value = otherConfig.max_stake || '';
         });
         
         form.querySelector('[name="after_trade_action"]').value = preset.after_trade_action;
@@ -901,7 +904,6 @@
             selections: Array.from(document.querySelectorAll('input[name="selections"]:checked')).map(cb => cb.value),
             active: form.querySelector('[name="active"]').checked,
             auto_trade: form.querySelector('[name="auto_trade"]').checked,
-            simulate: form.querySelector('[name="simulate"]').checked,
             ignore_benchmarks: form.querySelector('[name="ignore_benchmarks"]').checked,
             show_popular_leagues: form.querySelector('[name="show_popular_leagues"]').checked,
             min_odds: parseFloat(form.querySelector('[name="min_odds"]').value) || null,
@@ -979,7 +981,6 @@
             selections: Array.from(document.querySelectorAll('input[name="selections"]:checked')).map(cb => cb.value),
             active: form.querySelector('[name="active"]').checked,
             auto_trade: form.querySelector('[name="auto_trade"]').checked,
-            simulate: form.querySelector('[name="simulate"]').checked,
             ignore_benchmarks: form.querySelector('[name="ignore_benchmarks"]').checked,
             show_popular_leagues: form.querySelector('[name="show_popular_leagues"]').checked,
             min_odds: parseFloat(form.querySelector('[name="min_odds"]').value) || null,
@@ -991,11 +992,7 @@
             is_live: form.querySelector('input[name="is_live"]:checked').value === 'true',
             hours_before_min: parseInt(form.querySelector('[name="hours_before_min"]').value) || null,
             hours_before_max: parseInt(form.querySelector('[name="hours_before_max"]').value) || null,
-            staking_strategy: strategy,
             default_stake: parseFloat(form.querySelector('[name="default_stake"]').value) || 10.0,
-            percent_risk: parseFloat(form.querySelector('[name="percent_risk"]').value) || null,
-            kelly_multiplier: parseFloat(form.querySelector('[name="kelly_multiplier"]').value) || null,
-            max_stake: maxStake,
             after_trade_action: form.querySelector('[name="after_trade_action"]').value,
             other_config: {}
         };
@@ -1006,6 +1003,13 @@
             const key = el.getAttribute('data-key');
             data.other_config[key] = el.value;
         });
+        
+        // Add staking configuration to other_config
+        data.other_config.simulate = form.querySelector('[name="simulate"]').checked;
+        data.other_config.staking_strategy = strategy;
+        data.other_config.percent_risk = parseFloat(form.querySelector('[name="percent_risk"]').value) || null;
+        data.other_config.kelly_multiplier = parseFloat(form.querySelector('[name="kelly_multiplier"]').value) || null;
+        data.other_config.max_stake = maxStake;
 
         const res = await fetch(url, {
             method: method,

@@ -230,11 +230,12 @@
         window.currentPresetDefaultStake = "{{ current_preset.default_stake or 10 }}";
         window.currentPresetAfterTradeAction = "{{ current_preset.after_trade_action or 'none' }}";
         
-        // Staking strategy configuration
-        window.currentPresetStakingStrategy = "{{ current_preset.staking_strategy or 'fixed' }}";
-        window.currentPresetPercentRisk = {{ current_preset.percent_risk or 'null' }};
-        window.currentPresetKellyMultiplier = {{ current_preset.kelly_multiplier or 'null' }};
-        window.currentPresetMaxStake = {{ current_preset.max_stake or 'null' }};
+        // Staking strategy configuration from other_config
+        const otherConfig = {{ current_preset.other_config | tojson | safe if current_preset.other_config else '{}' }};
+        window.currentPresetStakingStrategy = otherConfig.staking_strategy || 'fixed';
+        window.currentPresetPercentRisk = otherConfig.percent_risk || null;
+        window.currentPresetKellyMultiplier = otherConfig.kelly_multiplier || null;
+        window.currentPresetMaxStake = otherConfig.max_stake || null;
 
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const ws = new WebSocket(`${protocol}//${window.location.host}/ws/tradefeed/${presetId}`);
