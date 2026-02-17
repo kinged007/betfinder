@@ -689,6 +689,8 @@
             simulateSection.classList.remove('hidden');
         } else {
             simulateSection.classList.add('hidden');
+            // Uncheck simulate when hiding it
+            document.querySelector('[name="simulate"]').checked = false;
         }
     }
 
