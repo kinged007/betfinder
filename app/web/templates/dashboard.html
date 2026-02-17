@@ -4,6 +4,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script
     src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+<script src="{{ url_for('static', path='js/stake_calculator.js') }}"></script>
 <script src="{{ url_for('static', path='js/bet_modal.js') }}"></script>
 
 <style>
@@ -221,7 +222,9 @@
     }
 </script>
 
-<!-- External Dashboard Logic -->
+<!-- External Logic -->
+<script src="{{ url_for('static', path='js/stake_calculator.js') }}"></script>
+<script src="{{ url_for('static', path='js/bet_modal.js') }}"></script>
 <script src="{{ url_for('static', path='js/dashboard.js') }}"></script>
 
 <!-- Betting Modal -->

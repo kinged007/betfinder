@@ -83,10 +83,10 @@ class StakeCalculator:
                 # Kelly fraction should be between 0 and 1
                 # Negative kelly means no edge, don't bet
                 if kelly_fraction <= 0:
-                    logger.warning(f"Kelly fraction is {kelly_fraction:.4f} (negative or zero), setting stake to minimum")
+                    logger.debug(f"Kelly fraction is {kelly_fraction:.4f} (negative or zero), setting stake to minimum")
                     stake = 0.0
                 elif kelly_fraction > 1:
-                    logger.warning(f"Kelly fraction is {kelly_fraction:.4f} (>1), capping at 1.0")
+                    logger.debug(f"Kelly fraction is {kelly_fraction:.4f} (>1), capping at 1.0")
                     kelly_fraction = 1.0
                     stake = bankroll * kelly_fraction
                 else:

@@ -3,7 +3,9 @@ from fastapi import WebSocket
 import logging
 import asyncio
 from app.services.analytics.trade_finder import TradeFinderService
+from app.services.stake_calculator import StakeCalculator
 from app.db.session import AsyncSessionLocal
+from app.db.models import Preset
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -132,13 +134,25 @@ class ConnectionManager:
                         continue
 
                     try:
-                        # Use a FRESH session per preset to avoid SQLite stale reads
                         async with AsyncSessionLocal() as db:
+                            # 0. Fetch Preset Config
+                            preset = await db.get(Preset, preset_id)
+                            other_config = preset.other_config if preset and preset.other_config else {}
+                            
+                            staking_strategy = other_config.get('staking_strategy', 'fixed')
+                            default_stake = preset.default_stake if preset else 10.0
+                            percent_risk = other_config.get('percent_risk')
+                            kelly_multiplier = other_config.get('kelly_multiplier')
+                            max_stake = other_config.get('max_stake')
+                            
+                            simulate = other_config.get('simulate', False)
+                            simulated_bankroll = float(other_config.get('simulated_bankroll', 1000))
+
                             # 1. Scan
                             opportunities = await self.trade_finder.scan_opportunities(db, preset_id)
                             logger.debug(f"[WS Poll] Preset {preset_id}: found {len(opportunities)} opportunities")
                             
-                            # 2. Process Changes & Serialize
+                            # 2. Process Changes & Serialize & Calculate Stake
                             opportunities_json = []
                             odds_increased = []
                             odds_decreased = []
@@ -163,8 +177,40 @@ class ConnectionManager:
                                 
                                 new_cache[opp_key] = current_price
                                 
+                                # SERVER SIDE STAKE CALCULATION
+                                effective_bankroll = opp.bookmaker.balance
+                                if simulate:
+                                    effective_bankroll = simulated_bankroll
+                                
+                                probability = 1.0 / current_price
+                                if opp.odd.true_odds and opp.odd.true_odds > 0:
+                                    probability = 1.0 / opp.odd.true_odds
+                                    
+                                calculated_stake = StakeCalculator.calculate_stake(
+                                    strategy=staking_strategy,
+                                    default_stake=default_stake,
+                                    bankroll=effective_bankroll,
+                                    probability=probability,
+                                    odds=current_price,
+                                    percent_risk=percent_risk,
+                                    kelly_multiplier=kelly_multiplier,
+                                    max_stake=max_stake
+                                )
+
                                 opp_dict = opp.to_dict()
                                 opp_dict["row_id"] = opp_key
+                                
+                                # Inject calculated values
+                                opp_dict["calculated_stake"] = calculated_stake
+                                opp_dict["staking_strategy"] = staking_strategy
+                                opp_dict["calculation_details"] = {
+                                    "strategy": staking_strategy,
+                                    "bankroll": effective_bankroll,
+                                    "probability": probability,
+                                    "risk_pct": percent_risk,
+                                    "kelly_mult": kelly_multiplier
+                                }
+                                
                                 opportunities_json.append(opp_dict)
                             
                             # Update cache

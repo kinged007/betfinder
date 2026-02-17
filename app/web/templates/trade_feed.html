@@ -232,6 +232,8 @@
         
         // Staking strategy configuration from other_config
         const otherConfig = {{ current_preset.other_config | tojson | safe if current_preset.other_config else '{}' }};
+            console.log("DEBUG: otherConfig loaded from server:", otherConfig);
+            console.log("DEBUG: Staking Strategy resolved to:", otherConfig.staking_strategy || 'fixed');
         window.currentPresetStakingStrategy = otherConfig.staking_strategy || 'fixed';
         window.currentPresetPercentRisk = otherConfig.percent_risk || null;
         window.currentPresetKellyMultiplier = otherConfig.kelly_multiplier || null;
@@ -244,8 +246,8 @@
         window.lastData = []; // Expose globally for bet_modal.js
         window.renderData = renderData; // Expose globally
 
-        // Config from preset
-        const otherConfig = {{ (current_preset.other_config or { }) | tojson | safe }};
+                // Config from preset (using already declared otherConfig)
+
         let currentGroupBy = otherConfig.group_by || 'none';
         let sortCol = otherConfig.sort_by || 'edge';
         let sortDir = otherConfig.sort_order || 'desc';

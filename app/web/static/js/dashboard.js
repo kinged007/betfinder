@@ -27,7 +27,19 @@ try {
         if (rawConfig.initialConfig) {
             dashboardConfig.sortCol = rawConfig.initialConfig.sort_by || 'edge';
             dashboardConfig.sortDir = rawConfig.initialConfig.sort_order || 'desc';
+
+            // Map configuration to window globals for bet_modal.js
+            window.currentPresetStakingStrategy = rawConfig.initialConfig.staking_strategy;
+            window.currentPresetPercentRisk = rawConfig.initialConfig.percent_risk;
+            window.currentPresetKellyMultiplier = rawConfig.initialConfig.kelly_multiplier;
+            window.currentPresetMaxStake = rawConfig.initialConfig.max_stake;
+            console.log("Global staking config set:", {
+                strategy: window.currentPresetStakingStrategy,
+                defaultStake: rawConfig.currentDefaultStake,
+                risk: window.currentPresetPercentRisk
+            });
         }
+        window.currentPresetDefaultStake = rawConfig.currentDefaultStake;
     }
 } catch (e) {
     console.error('Failed to parse dashboard config:', e);
@@ -266,6 +278,19 @@ function updateTradeFeed(data) {
 
     // WebSocket sends 'opportunities', not 'odds'
     const opportunities = data.opportunities || [];
+
+    // Sync globals from the first opportunity to ensure modal is up to date
+    if (opportunities.length > 0) {
+        const first = opportunities[0];
+        if (first.staking_strategy) window.currentPresetStakingStrategy = first.staking_strategy;
+
+        if (first.calculation_details) {
+            const details = first.calculation_details;
+            if (details.risk_pct !== undefined) window.currentPresetPercentRisk = details.risk_pct;
+            if (details.kelly_mult !== undefined) window.currentPresetKellyMultiplier = details.kelly_mult;
+            if (details.bankroll !== undefined) window.currentBookmakerBalance = details.bankroll;
+        }
+    }
 
     if (opportunities.length === 0) {
         tbody.innerHTML = `

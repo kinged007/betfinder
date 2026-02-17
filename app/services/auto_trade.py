@@ -54,9 +54,12 @@ class AutoTradeService:
             "details": []
         }
         
+        # Track bookmakers used in this entire cycle execution
+        cycle_used_bookmakers = set()
+        
         for preset in presets:
             try:
-                preset_stats = await AutoTradeService._process_preset(db, preset)
+                preset_stats = await AutoTradeService._process_preset(db, preset, cycle_used_bookmakers)
                 stats["presets_processed"] += 1
                 stats["bets_placed"] += preset_stats["bets_placed"]
                 stats["errors"] += preset_stats["errors"]
@@ -73,13 +76,18 @@ class AutoTradeService:
         return stats
     
     @staticmethod
-    async def _process_preset(db: AsyncSession, preset: Preset) -> Dict[str, Any]:
+    async def _process_preset(
+        db: AsyncSession, 
+        preset: Preset, 
+        cycle_used_bookmakers: set = None
+    ) -> Dict[str, Any]:
         """
         Process a single preset for auto-trading.
         
         Args:
             db: Database session
             preset: Preset to process
+            cycle_used_bookmakers: Set of bookmaker IDs already used in this cycle
             
         Returns:
             Dict with execution statistics for this preset
@@ -92,11 +100,14 @@ class AutoTradeService:
             "opportunities_found": 0
         }
         
+        if cycle_used_bookmakers is None:
+            cycle_used_bookmakers = set()
+        
         trade_finder = TradeFinderService()
         
         # Keep looping until no more opportunities or error
         while True:
-            # Scan for opportunities (API bookmakers only for auto-trading)
+            #Scan for opportunities (API bookmakers only for auto-trading)
             opportunities = await trade_finder.scan_opportunities(db, preset.id, api_only=True)
             
             if not opportunities:
@@ -113,6 +124,11 @@ class AutoTradeService:
             bet_placed_in_scan = False
             
             for opportunity in opportunities:
+                # SKIP if bookmaker already used in this cycle
+                if opportunity.bookmaker.id in cycle_used_bookmakers:
+                    logger.debug(f"Skipping opportunity for {opportunity.bookmaker.title} (ID: {opportunity.bookmaker.id}) - Bookmaker already used in this cycle")
+                    continue
+                
                 try:
                     bet_placed = await AutoTradeService._place_bet_for_opportunity(
                         db, preset, opportunity
@@ -121,6 +137,10 @@ class AutoTradeService:
                     if bet_placed:
                         stats["bets_placed"] += 1
                         logger.info(f"Bet placed successfully for {opportunity.event.home_team} vs {opportunity.event.away_team}")
+                        
+                        # Mark bookmaker as used for this cycle
+                        cycle_used_bookmakers.add(opportunity.bookmaker.id)
+                        
                         bet_placed_in_scan = True
                         # Break inner loop to re-scan (refreshing list with hidden items removed)
                         break 
@@ -239,14 +259,29 @@ class AutoTradeService:
         percent_risk = other_config.get('percent_risk')
         kelly_multiplier = other_config.get('kelly_multiplier')
         max_stake = other_config.get('max_stake')
+        max_stake = other_config.get('max_stake')
         simulate = other_config.get('simulate', False)
         
+        # Determine effective bankroll
+        effective_bankroll = bookmaker.balance
+        if simulate:
+            effective_bankroll = float(other_config.get('simulated_bankroll', 1000))
+            logger.info(f"🎭 Using simulated bankroll: {effective_bankroll} EUR")
+        
+        # Determine probability for calculation (prefer true probability from benchmark)
+        # Kelly requires the TRUE win probability. 
+        # If true_odds available, use 1/true_odds.
+        # Otherwise fallback to 1/price (which typically yields 0 Edge -> 0 Stake).
+        calc_probability = 1.0 / opportunity.odd.price
+        if opportunity.odd.true_odds and opportunity.odd.true_odds > 0:
+            calc_probability = 1.0 / opportunity.odd.true_odds
+            
         # Calculate stake using staking strategy
         stake = StakeCalculator.calculate_stake(
             strategy=staking_strategy,
             default_stake=preset.default_stake or 10.0,
-            bankroll=bookmaker.balance,
-            probability=opportunity.odd.implied_probability,
+            bankroll=effective_bankroll,
+            probability=calc_probability,
             odds=opportunity.odd.price,
             percent_risk=percent_risk,
             kelly_multiplier=kelly_multiplier,
@@ -254,6 +289,11 @@ class AutoTradeService:
         )
         
         logger.info(f"Calculated stake: {stake:.2f} EUR using strategy '{staking_strategy}'")
+        
+        # Check minimum stake requirement (0.1 EUR)
+        if stake < 0.1:
+            logger.info(f"❌ Calculated stake {stake:.2f} is below minimum threshold of 0.1. Skipping bet.")
+            return False
         
         # Check available balance (skip if simulated trade)
         if not simulate:

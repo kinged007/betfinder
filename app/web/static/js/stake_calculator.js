@@ -1,8 +1,8 @@
 // Stake Calculator for BetFinder
 // Calculates stake amounts based on different staking strategies
 
-function calculateStake(
-    strategy,
+function calculateStakeDetails(
+    strategyOrConfig,
     defaultStake,
     bankroll,
     probability,
@@ -11,55 +11,77 @@ function calculateStake(
     kellyMultiplier,
     maxStake
 ) {
+    // Support object argument
+    let strategy = strategyOrConfig;
+    if (typeof strategyOrConfig === 'object' && strategyOrConfig !== null) {
+        const config = strategyOrConfig;
+        strategy = config.strategy;
+        defaultStake = config.defaultStake;
+        bankroll = config.bankroll;
+        probability = config.probability;
+        odds = config.odds;
+        percentRisk = config.percentRisk;
+        kellyMultiplier = config.kellyMultiplier;
+        maxStake = config.maxStake;
+    }
     let stake = 0.0;
+    let details = {
+        risk_pct: 0,
+        ev_pct: 0,
+        port_pct: 0,
+        strategy: strategy,
+        bankroll: bankroll
+    };
+
+    // Calculate EV% (Edge)
+    if (probability && odds) {
+        details.ev_pct = ((probability * odds) - 1) * 100;
+    }
 
     if (strategy === 'fixed') {
         stake = defaultStake || 10.0;
     }
     else if (strategy === 'risk') {
-        if (!percentRisk) {
-            console.warn("Percent risk not provided for 'risk' strategy, using 10%");
-            percentRisk = 10.0;
+        if (percentRisk === undefined || percentRisk === null) {
+            console.warn("Percent risk not provided for 'risk' strategy, using 1.0%");
+            percentRisk = 1.0;
         }
+        details.risk_pct = parseFloat(percentRisk);
+
         // Calculate stake as percentage of bankroll
-        stake = bankroll * (percentRisk / 100.0);
+        stake = bankroll * (details.risk_pct / 100.0);
     }
     else if (strategy === 'kelly') {
         if (!probability || !odds) {
             console.error("Probability and odds are required for Kelly strategy, falling back to fixed");
             stake = defaultStake || 10.0;
         } else {
-            if (!kellyMultiplier) {
+            if (kellyMultiplier === undefined || kellyMultiplier === null) {
                 console.warn("Kelly multiplier not provided, using 1.0");
                 kellyMultiplier = 1.0;
             }
 
             // Kelly Criterion: f = (bp - q) / b
-            // where:
-            //   f = fraction of bankroll to bet
-            //   b = decimal odds - 1 (net odds)
-            //   p = probability of winning (as decimal, e.g., 0.5 for 50%)
-            //   q = probability of losing (1 - p)
-
             const b = odds - 1.0;  // Net odds
-            const p = probability;  // Already in decimal form
-            const q = 1.0 - p;
+            const p = probability;  // Probability of winning
+            const q = 1.0 - p;      // Probability of losing
 
             // Calculate Kelly fraction
             let kellyFraction = (b * p - q) / b;
 
-            // Apply multiplier to reduce volatility
+            // Store raw Kelly fraction as risk percentage (before multiplier)
+            details.risk_pct = kellyFraction * 100;
+
+            // Apply multiplier
             kellyFraction = kellyFraction * kellyMultiplier;
 
             // Kelly fraction should be between 0 and 1
-            // Negative kelly means no edge, don't bet
             if (kellyFraction <= 0) {
-                console.warn(`Kelly fraction is ${kellyFraction.toFixed(4)} (negative or zero), setting stake to 0`);
+                console.log(`Kelly fraction is ${kellyFraction.toFixed(4)} (negative or zero), setting stake to 0`);
                 stake = 0.0;
             } else if (kellyFraction > 1) {
-                console.warn(`Kelly fraction is ${kellyFraction.toFixed(4)} (>1), capping at 1.0`);
-                kellyFraction = 1.0;
-                stake = bankroll * kellyFraction;
+                console.log(`Kelly fraction is ${kellyFraction.toFixed(4)} (>1), capping at 1.0`);
+                stake = bankroll; // Cap at bankroll (100%)
             } else {
                 stake = bankroll * kellyFraction;
             }
@@ -78,9 +100,39 @@ function calculateStake(
     // Ensure stake is at least 0
     stake = Math.max(0.0, stake);
 
-    // Round to 2 decimal places
-    stake = Math.round(stake * 100) / 100;
+    // Final calculation of portfolio % based on the actual stake
+    if (bankroll > 0) {
+        details.port_pct = (stake / bankroll) * 100;
+    }
 
-    console.debug(`Calculated stake: ${stake.toFixed(2)} using strategy '${strategy}'`);
-    return stake;
+    // Round numbers for display
+    stake = Math.round(stake * 100) / 100;
+    details.risk_pct = Math.round(details.risk_pct * 100) / 100;
+    details.ev_pct = Math.round(details.ev_pct * 100) / 100;
+    details.port_pct = Math.round(details.port_pct * 100) / 100;
+
+    return { stake, details };
+}
+
+function calculateStake(
+    strategy,
+    defaultStake,
+    bankroll,
+    probability,
+    odds,
+    percentRisk,
+    kellyMultiplier,
+    maxStake
+) {
+    const result = calculateStakeDetails(
+        strategy,
+        defaultStake,
+        bankroll,
+        probability,
+        odds,
+        percentRisk,
+        kellyMultiplier,
+        maxStake
+    );
+    return result.stake;
 }

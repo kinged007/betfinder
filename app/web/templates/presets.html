@@ -117,15 +117,22 @@
             </div>
 
             <!-- Simulate Toggle (shown when Auto-Trade is enabled) -->
-            <div id="simulate_section" class="hidden mt-4">
+            <div id="simulate_section" class="hidden mt-4 grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
                 <div class="form-control">
                     <label class="label cursor-pointer justify-start gap-3">
-                        <input type="checkbox" name="simulate" class="toggle toggle-sm toggle-secondary" />
+                        <input type="checkbox" name="simulate" class="toggle toggle-sm toggle-secondary" onchange="toggleSimulateBankroll()" />
                         <div>
                             <span class="label-text font-semibold">Simulate Trades</span>
                             <p class="text-xs opacity-60">Place virtual bets without API calls or balance deduction</p>
                         </div>
                     </label>
+                </div>
+                <!-- Simulated Bankroll Field (shown when Simulate is enabled) -->
+                <div id="simulated_bankroll_field" class="form-control hidden">
+                    <label class="label"><span class="label-text">Simulated Bankroll (EUR)</span></label>
+                    <input type="number" step="1" name="simulated_bankroll" class="input input-bordered input-sm" value="1000"
+                        placeholder="1000" />
+                    <label class="label"><span class="label-text-alt">Starting balance for simulation</span></label>
                 </div>
             </div>
 
@@ -687,10 +694,23 @@
         const simulateSection = document.getElementById('simulate_section');
         if (autoTradeChecked) {
             simulateSection.classList.remove('hidden');
+            toggleSimulateBankroll(); // Ensure correct state of bankroll field
         } else {
             simulateSection.classList.add('hidden');
             // Uncheck simulate when hiding it
-            document.querySelector('[name="simulate"]').checked = false;
+                                                const simulateCheckbox = document.querySelector('[name="simulate"]');
+                                                simulateCheckbox.checked = false;
+                                                toggleSimulateBankroll();
+                                            }
+                                        }
+
+                                        function toggleSimulateBankroll() {
+                                            const simulateChecked = document.querySelector('[name="simulate"]').checked;
+                                            const bankrollField = document.getElementById('simulated_bankroll_field');
+                                            if (simulateChecked) {
+                                                bankrollField.classList.remove('hidden');
+                                            } else {
+                                                bankrollField.classList.add('hidden');
         }
     }
 
@@ -750,6 +770,8 @@
         document.getElementById('staking_strategy').value = 'fixed';
         toggleStakingFields();
         toggleSimulate();
+        form.querySelector('[name="simulated_bankroll"]').value = 1000;
+        toggleSimulateBankroll();
 
         // Reset displays
         updateSportsDisplay();
@@ -780,6 +802,8 @@
         // Get staking config from other_config
         const otherConfig = preset.other_config || {};
         form.querySelector('[name="simulate"]').checked = otherConfig.simulate || false;
+        form.querySelector('[name="simulated_bankroll"]').value = otherConfig.simulated_bankroll || 1000;
+        toggleSimulateBankroll();
 
         // Set checkboxes for multi-selects
         const setCheckboxes = (name, vals) => {
@@ -825,7 +849,8 @@
         form.querySelector('[name="after_trade_action"]').value = preset.after_trade_action;
 
         // Populate Other Config
-        const otherConfig = preset.other_config || {};
+        // Populate Other Config (using already declared otherConfig)
+
         document.querySelectorAll('[data-other-config="true"]').forEach(el => {
             const key = el.getAttribute('data-key');
             if (otherConfig[key] !== undefined) {
@@ -931,6 +956,13 @@
             const key = el.getAttribute('data-key');
             data.other_config[key] = el.value;
         });
+
+        // CRITICAL FIX: Explicitly copy staking configuration to other_config
+        data.other_config.simulate = form.querySelector('[name="simulate"]').checked;
+        data.other_config.staking_strategy = strategy;
+        data.other_config.percent_risk = parseFloat(form.querySelector('[name="percent_risk"]').value) || null;
+        data.other_config.kelly_multiplier = parseFloat(form.querySelector('[name="kelly_multiplier"]').value) || null;
+        data.other_config.max_stake = maxStake;
 
         // 2. Submit as new POST
         const res = await fetch('/api/v1/presets', {

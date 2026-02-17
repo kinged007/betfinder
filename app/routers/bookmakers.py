@@ -113,3 +113,32 @@ async def test_connection(
         return {"status": "success", "connected": success}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+@router.get("/bookmakers/key/{key}/balance")
+async def get_bookmaker_balance_by_key(
+    key: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Fetch the latest balance and currency for a bookmaker by its key.
+    Used by the bet modal to show available funds.
+    """
+    result = await db.execute(select(Bookmaker).where(Bookmaker.key == key))
+    bookmaker = result.scalar_one_or_none()
+    
+    if not bookmaker:
+        raise HTTPException(status_code=404, detail=f"Bookmaker with key '{key}' not found")
+    
+    # Try to get live balance if it's an API bookmaker and active
+    balance = bookmaker.balance
+    currency = (bookmaker.config or {}).get("currency", "EUR")
+    
+    # We return the stored balance for speed, but we could trigger a refresh here.
+    # Given the user wants it in the modal, a stored balance is usually sufficient 
+    # as balance is synced periodically or on bet placement.
+    return {
+        "balance": balance,
+        "currency": currency,
+        "key": key,
+        "title": bookmaker.title
+    }
