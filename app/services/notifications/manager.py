@@ -212,6 +212,11 @@ class NotificationManager:
         price = bet.price
         bookmaker_name = bet.bookmaker.title if bet.bookmaker else "Unknown Bookmaker"
         
+        # Bookmaker Link (similar to new trade notification)
+        bookmaker_display = bookmaker_name
+        if bet.odd_data and bet.odd_data.get("url"):
+            bookmaker_display = f"[{bookmaker_name}]({bet.odd_data['url']})"
+        
         # Edge/Prob if available
         # They should be in odd_data
         edge_str = "-"
@@ -225,11 +230,10 @@ class NotificationManager:
         message = (
             f"✅ *{preset.name} - Bet Placed*\n"
             f"{sport_icon} `{home_team}` vs `{away_team}`\n"
-            f"{market_key} - `{selection}` @{price} ({bookmaker_name})\n"
+            f"{market_key} - `{selection}` @{price} ({bookmaker_display})\n"
             f"Stake: {bet.stake}\n"
             f"Prob: {prob_str}\n"
-            f"Edge: {edge_str}\n"
-            f"ID: #{bet.id}"
+            f"Edge: {edge_str}"
         )
 
         # 3. Send Notification
