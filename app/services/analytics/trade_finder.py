@@ -565,6 +565,7 @@ class TradeFinderService:
                 "selection": odd.normalized_selection,
                 "selection_name": odd.selection,
                 "bookmaker": bookmaker.title,
+                "bookmaker_key": bookmaker.key,
                 "sport": sport.title,
                 "league": league.title if league else "Other",
                 "price": odd.price,
