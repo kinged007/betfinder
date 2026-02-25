@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Request, Depends, HTTPException, Form
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, case, func, or_
@@ -353,55 +353,64 @@ async def bets_view(request: Request, db: AsyncSession = Depends(get_db)):
     now = datetime.now(timezone.utc)
     live_cutoff_past = now - timedelta(minutes=120) # Define settled statuses for tabs logic
     SETTLED_STATUSES = [BetResult.WON.value, BetResult.LOST.value, BetResult.VOID.value]
+    PAGE_LIMIT = 50
+
+    # Common options for eager loading
+    load_options = [selectinload(Bet.event).selectinload(Event.league), selectinload(Bet.bookmaker)]
 
     # 1. Live Bets (Currently playing)
-    # Starts between now-120min and now.
+    live_where = [
+        Bet.status.notin_(SETTLED_STATUSES),
+        Event.commence_time >= live_cutoff_past,
+        Event.commence_time <= now,
+    ]
+    live_total = (await db.execute(
+        select(func.count(Bet.id)).outerjoin(Event, Bet.event_id == Event.id).where(*live_where)
+    )).scalar_one()
     live_stmt = (
-        select(Bet)
-        .outerjoin(Event, Bet.event_id == Event.id)
-        .options(selectinload(Bet.event).selectinload(Event.league), selectinload(Bet.bookmaker))
-        .where(
-            Bet.status.notin_(SETTLED_STATUSES),
-            Event.commence_time >= live_cutoff_past,
-            Event.commence_time <= now
-        )
-        .order_by(Event.commence_time.asc())
+        select(Bet).outerjoin(Event, Bet.event_id == Event.id)
+        .options(*load_options).where(*live_where)
+        .order_by(Event.commence_time.asc()).offset(0).limit(PAGE_LIMIT)
     )
 
     # 2. Open Bets (Future / Upcoming)
-    # Starts in future (> now)
+    open_where = [
+        Bet.status.notin_(SETTLED_STATUSES),
+        Event.commence_time > now,
+    ]
+    open_total = (await db.execute(
+        select(func.count(Bet.id)).outerjoin(Event, Bet.event_id == Event.id).where(*open_where)
+    )).scalar_one()
     open_stmt = (
-        select(Bet)
-        .outerjoin(Event, Bet.event_id == Event.id)
-        .options(selectinload(Bet.event).selectinload(Event.league), selectinload(Bet.bookmaker))
-        .where(
-            Bet.status.notin_(SETTLED_STATUSES),
-            Event.commence_time > now
-        )
-        .order_by(Event.commence_time.asc())
+        select(Bet).outerjoin(Event, Bet.event_id == Event.id)
+        .options(*load_options).where(*open_where)
+        .order_by(Event.commence_time.asc()).offset(0).limit(PAGE_LIMIT)
     )
-    
+
     # 3. Unsettled Bets (Past due, no result)
-    # Started more than 120 mins ago (< now-120)
+    unsettled_where = [
+        Bet.status.notin_(SETTLED_STATUSES),
+        Event.commence_time < live_cutoff_past,
+    ]
+    unsettled_total = (await db.execute(
+        select(func.count(Bet.id)).outerjoin(Event, Bet.event_id == Event.id).where(*unsettled_where)
+    )).scalar_one()
     unsettled_stmt = (
-        select(Bet)
-        .outerjoin(Event, Bet.event_id == Event.id)
-        .options(selectinload(Bet.event).selectinload(Event.league), selectinload(Bet.bookmaker))
-        .where(
-            Bet.status.notin_(SETTLED_STATUSES),
-            Event.commence_time < live_cutoff_past
-        )
-        .order_by(Event.commence_time.desc())
+        select(Bet).outerjoin(Event, Bet.event_id == Event.id)
+        .options(*load_options).where(*unsettled_where)
+        .order_by(Event.commence_time.desc()).offset(0).limit(PAGE_LIMIT)
     )
 
     # 4. Settled
+    settled_where = [Bet.status.in_(SETTLED_STATUSES)]
+    settled_total = (await db.execute(
+        select(func.count(Bet.id)).outerjoin(Event, Bet.event_id == Event.id).where(*settled_where)
+    )).scalar_one()
     settled_stmt = (
-        select(Bet)
-        .outerjoin(Event, Bet.event_id == Event.id)
-        .options(selectinload(Bet.event).selectinload(Event.league), selectinload(Bet.bookmaker))
-        .where(Bet.status.in_(SETTLED_STATUSES))
+        select(Bet).outerjoin(Event, Bet.event_id == Event.id)
+        .options(*load_options).where(*settled_where)
         .order_by(Bet.settled_at.desc() if hasattr(Bet, 'settled_at') else Bet.placed_at.desc())
-        .limit(100)
+        .offset(0).limit(PAGE_LIMIT)
     )
 
     live_bets = (await db.execute(live_stmt)).scalars().all()
@@ -422,6 +431,11 @@ async def bets_view(request: Request, db: AsyncSession = Depends(get_db)):
              "open_bets": open_bets,
              "unsettled_bets": unsettled_bets,
              "settled_bets": settled_bets,
+             "live_total": live_total,
+             "open_total": open_total,
+             "unsettled_total": unsettled_total,
+             "settled_total": settled_total,
+             "page_limit": PAGE_LIMIT,
              "presets": presets,
              "now": now,
              "timedelta": timedelta,
@@ -589,6 +603,8 @@ async def get_hidden_items(
 async def bets_partial_view(
     request: Request, 
     tab: str,
+    page: int = 1,
+    limit: int = 50,
     db: AsyncSession = Depends(get_db)
 ):
     from datetime import timedelta, datetime
@@ -596,68 +612,86 @@ async def bets_partial_view(
     live_cutoff_past = now - timedelta(minutes=120) 
     SETTLED_STATUSES = [BetResult.WON.value, BetResult.LOST.value, BetResult.VOID.value]
 
-    stmt = None
-    bets = []
-    
+    count_stmt = None
+    data_stmt = None
+
     # Common Loader Options
     options = [selectinload(Bet.event).selectinload(Event.league), selectinload(Bet.bookmaker)]
     
+    page = max(1, page)
+
     if tab == 'live':
-        stmt = (
-            select(Bet)
-            .outerjoin(Event, Bet.event_id == Event.id)
-            .options(*options)
-            .where(
-                Bet.status.notin_(SETTLED_STATUSES),
-                Event.commence_time >= live_cutoff_past,
-                Event.commence_time <= now
-            )
+        where_clauses = [
+            Bet.status.notin_(SETTLED_STATUSES),
+            Event.commence_time >= live_cutoff_past,
+            Event.commence_time <= now,
+        ]
+        count_stmt = select(func.count(Bet.id)).outerjoin(Event, Bet.event_id == Event.id).where(*where_clauses)
+        data_stmt = (
+            select(Bet).outerjoin(Event, Bet.event_id == Event.id)
+            .options(*options).where(*where_clauses)
             .order_by(Event.commence_time.asc())
         )
     elif tab == 'open':
-        stmt = (
-            select(Bet)
-            .outerjoin(Event, Bet.event_id == Event.id)
-            .options(*options)
-            .where(
-                Bet.status.notin_(SETTLED_STATUSES),
-                Event.commence_time > now
-            )
+        where_clauses = [
+            Bet.status.notin_(SETTLED_STATUSES),
+            Event.commence_time > now,
+        ]
+        count_stmt = select(func.count(Bet.id)).outerjoin(Event, Bet.event_id == Event.id).where(*where_clauses)
+        data_stmt = (
+            select(Bet).outerjoin(Event, Bet.event_id == Event.id)
+            .options(*options).where(*where_clauses)
             .order_by(Event.commence_time.asc())
         )
     elif tab == 'unsettled':
-        stmt = (
-            select(Bet)
-            .outerjoin(Event, Bet.event_id == Event.id)
-            .options(*options)
-            .where(
-                Bet.status.notin_(SETTLED_STATUSES),
-                Event.commence_time < live_cutoff_past
-            )
+        where_clauses = [
+            Bet.status.notin_(SETTLED_STATUSES),
+            Event.commence_time < live_cutoff_past,
+        ]
+        count_stmt = select(func.count(Bet.id)).outerjoin(Event, Bet.event_id == Event.id).where(*where_clauses)
+        data_stmt = (
+            select(Bet).outerjoin(Event, Bet.event_id == Event.id)
+            .options(*options).where(*where_clauses)
             .order_by(Event.commence_time.desc())
         )
     elif tab == 'settled':
-         stmt = (
-            select(Bet)
-            .outerjoin(Event, Bet.event_id == Event.id)
-            .options(*options)
-            .where(Bet.status.in_(SETTLED_STATUSES))
+        where_clauses = [Bet.status.in_(SETTLED_STATUSES)]
+        count_stmt = select(func.count(Bet.id)).outerjoin(Event, Bet.event_id == Event.id).where(*where_clauses)
+        data_stmt = (
+            select(Bet).outerjoin(Event, Bet.event_id == Event.id)
+            .options(*options).where(*where_clauses)
             .order_by(Bet.settled_at.desc() if hasattr(Bet, 'settled_at') else Bet.placed_at.desc())
-            .limit(100)
         )
-    
-    if stmt is not None:
+
+    bets = []
+    total_items = 0
+    rows_html = ""
+
+    if count_stmt is not None and data_stmt is not None:
+        total_items = (await db.execute(count_stmt)).scalar_one()
+        stmt = data_stmt.offset((page - 1) * limit).limit(limit)
         bets = (await db.execute(stmt)).scalars().all()
-        
-    return templates.TemplateResponse(
-        "partials/bet_rows.html",
-        {
-            "request": request,
-            "bets": bets,
-            "now": now,
-            "timedelta": timedelta,
+        rows_html = templates.TemplateResponse(
+            "partials/bet_rows.html",
+            {
+                "request": request,
+                "bets": bets,
+                "now": now,
+                "timedelta": timedelta,
+            }
+        ).body.decode("utf-8")
+
+    total_pages = max(1, (total_items + limit - 1) // limit) if total_items > 0 else 1
+
+    return JSONResponse({
+        "rows_html": rows_html,
+        "pagination": {
+            "page": page,
+            "limit": limit,
+            "total_items": total_items,
+            "total_pages": total_pages,
         }
-    )
+    })
 
 @router.get("/mappings")
 async def mappings_view(

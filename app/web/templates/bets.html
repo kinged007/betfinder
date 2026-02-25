@@ -28,7 +28,8 @@
     </style>
 
     {# Macro to render the bet table #}
-    {% macro render_bet_table(bets, table_id) %}
+    {% macro render_bet_table(bets, table_id, total=0, page=1, limit=50) %}
+    {% set total_pages = ((total + limit - 1) // limit) if total > limit else 1 %}
     <div class="h-full min-h-[500px]">
         <table class="table w-full text-sm bet-table" id="{{ table_id }}">
             <thead>
@@ -52,6 +53,18 @@
                 {% include "partials/bet_rows.html" %}
             </tbody>
         </table>
+    </div>
+    {% set tab_name = table_id | replace('table-', '') %}
+    <div class="flex justify-center py-4" id="{{ table_id }}-pagination" {% if total_pages <= 1 %}style="display:none"{% endif %}>
+        <div class="join">
+            <button class="join-item btn btn-sm" id="{{ table_id }}-btn-prev"
+                onclick="changeTabPage('{{ tab_name }}', {{ page - 1 }})"
+                {% if page <= 1 %}disabled{% endif %}>«</button>
+            <button class="join-item btn btn-sm pointer-events-none">Page <span id="{{ table_id }}-page-num">{{ page }}</span> of <span id="{{ table_id }}-total-pages">{{ total_pages }}</span></button>
+            <button class="join-item btn btn-sm" id="{{ table_id }}-btn-next"
+                onclick="changeTabPage('{{ tab_name }}', {{ page + 1 }})"
+                {% if page >= total_pages %}disabled{% endif %}>»</button>
+        </div>
     </div>
     {% endmacro %}
 
@@ -84,8 +97,8 @@
                 onclick="switchTab('live')">
                 Live
                 <span id="badge-live-count"
-                    class="badge badge-xs badge-ghost pt-px {% if live_bets|length == 0 %}hidden{% endif %}">
-                    {{ '99+' if live_bets|length > 99 else live_bets|length }}
+                    class="badge badge-xs badge-ghost pt-px {% if live_total == 0 %}hidden{% endif %}">
+                    {{ '99+' if live_total > 99 else live_total }}
                 </span>
             </a>
 
@@ -93,8 +106,8 @@
             <a role="tab" class="tab font-bold gap-2 whitespace-nowrap h-12" id="tab-open" onclick="switchTab('open')">
                 Open
                 <span id="badge-open-count"
-                    class="badge badge-xs badge-ghost pt-px {% if open_bets|length == 0 %}hidden{% endif %}">
-                    {{ '99+' if open_bets|length > 99 else open_bets|length }}
+                    class="badge badge-xs badge-ghost pt-px {% if open_total == 0 %}hidden{% endif %}">
+                    {{ '99+' if open_total > 99 else open_total }}
                 </span>
             </a>
 
@@ -103,8 +116,8 @@
                 onclick="switchTab('unsettled')">
                 Unsettled
                 <span id="badge-unsettled-count"
-                    class="badge badge-xs badge-warning pt-px {% if unsettled_bets|length == 0 %}hidden{% endif %}">
-                    {{ '99+' if unsettled_bets|length > 99 else unsettled_bets|length }}
+                    class="badge badge-xs badge-warning pt-px {% if unsettled_total == 0 %}hidden{% endif %}">
+                    {{ '99+' if unsettled_total > 99 else unsettled_total }}
                 </span>
             </a>
 
@@ -113,26 +126,26 @@
                 onclick="switchTab('settled')">
                 Settled
                 <span id="badge-settled-count"
-                    class="badge badge-xs badge-ghost pt-px {% if settled_bets|length == 0 %}hidden{% endif %}">
-                    {{ '99+' if settled_bets|length > 99 else settled_bets|length }}
+                    class="badge badge-xs badge-ghost pt-px {% if settled_total == 0 %}hidden{% endif %}">
+                    {{ '99+' if settled_total > 99 else settled_total }}
                 </span>
             </a>
 
             <div class="tab-content bg-base-100 border-base-300 rounded-box p-0 w-full hidden" role="tabpanel"
                 id="content-live">
-                {{ render_bet_table(live_bets, 'table-live') }}
+                {{ render_bet_table(live_bets, 'table-live', live_total, 1, page_limit) }}
             </div>
             <div class="tab-content bg-base-100 border-base-300 rounded-box p-0 w-full hidden" role="tabpanel"
                 id="content-open">
-                {{ render_bet_table(open_bets, 'table-open') }}
+                {{ render_bet_table(open_bets, 'table-open', open_total, 1, page_limit) }}
             </div>
             <div class="tab-content bg-base-100 border-base-300 rounded-box p-0 w-full hidden" role="tabpanel"
                 id="content-unsettled">
-                {{ render_bet_table(unsettled_bets, 'table-unsettled') }}
+                {{ render_bet_table(unsettled_bets, 'table-unsettled', unsettled_total, 1, page_limit) }}
             </div>
             <div class="tab-content bg-base-100 border-base-300 rounded-box p-0 w-full hidden" role="tabpanel"
                 id="content-settled">
-                {{ render_bet_table(settled_bets, 'table-settled') }}
+                {{ render_bet_table(settled_bets, 'table-settled', settled_total, 1, page_limit) }}
             </div>
         </div>
     </div>
@@ -191,6 +204,9 @@
 </dialog>
 
 <script>
+    // Per-tab page tracking
+    const tabPages = { live: 1, open: 1, unsettled: 1, settled: 1 };
+
     function switchTab(tabName) {
         // Update active tab styling
         document.querySelectorAll('.tab').forEach(t => t.classList.remove('tab-active'));
@@ -210,6 +226,38 @@
 
         localStorage.setItem('my_bets_active_tab', tabName);
         clearSelection();
+    }
+
+    function changeTabPage(tab, newPage) {
+        if (newPage < 1) return;
+        tabPages[tab] = newPage;
+        refreshTab(tab, newPage);
+    }
+
+    function updateTabPagination(tab, pagination) {
+        const tableId = `table-${tab}`;
+        const paginationEl = document.getElementById(`${tableId}-pagination`);
+        if (!paginationEl) return;
+
+        const p = pagination;
+        if (p.total_pages > 1) {
+            paginationEl.style.display = 'flex';
+            document.getElementById(`${tableId}-page-num`).textContent = p.page;
+            document.getElementById(`${tableId}-total-pages`).textContent = p.total_pages;
+
+            const btnPrev = document.getElementById(`${tableId}-btn-prev`);
+            const btnNext = document.getElementById(`${tableId}-btn-next`);
+            if (btnPrev) {
+                btnPrev.disabled = p.page <= 1;
+                btnPrev.onclick = () => changeTabPage(tab, p.page - 1);
+            }
+            if (btnNext) {
+                btnNext.disabled = p.page >= p.total_pages;
+                btnNext.onclick = () => changeTabPage(tab, p.page + 1);
+            }
+        } else {
+            paginationEl.style.display = 'none';
+        }
     }
 
     function toggleSelectAll(masterCb) {
@@ -377,10 +425,6 @@
         });
     }
 
-    // Tab persistence logic
-    // We already have `switchTab` handling this via onclick.
-    // We just need to restore it on load.
-
     // WebSocket for My Bets Updates
     let myBetsWs;
     let wsReconnectInterval = 3000;
@@ -402,15 +446,12 @@
                 // Signal to refresh (e.g. {type: "bets_updated"})
                 if (data.type === 'bets_updated') {
                     console.log("Bets updated signal received. Refreshing tabs...");
-                    // Refresh all tabs
-                    ['live', 'open', 'unsettled', 'settled'].forEach(tab => refreshTab(tab));
+                    // Refresh all tabs at their current page
+                    ['live', 'open', 'unsettled', 'settled'].forEach(tab => refreshTab(tab, tabPages[tab] || 1));
                 }
 
                 // Legacy: If server sends full HTML payload (optional support)
                 ['live', 'open', 'unsettled', 'settled'].forEach(type => {
-                    if (data[type]) {
-                        updateTableContent(type, data[type]);
-                    }
                     if (data[`${type}_count`] !== undefined) {
                         updateBadge(type, data[`${type}_count`]);
                     }
@@ -432,31 +473,19 @@
         };
     }
 
-    async function refreshTab(tab) {
+    async function refreshTab(tab, page) {
+        page = page || tabPages[tab] || 1;
         try {
-            const response = await fetch(`/partials/bets?tab=${tab}`);
+            const response = await fetch(`/partials/bets?tab=${tab}&page=${page}&limit=50`);
             if (response.ok) {
-                const html = await response.text();
-                updateTableContent(tab, html);
+                const data = await response.json();
+                updateTableContent(tab, data.rows_html);
 
-                // Count items to update badge?
-                // The partial contains rows.
-                // We can parse it or just rely on the fact that if we use morph, we preserve state.
-                // But badge count? 
-                // Currently partial returns `bet_rows.html`. It does NOT return count.
-                // We need to count the rows in the HTML or DOM updates.
-
-                // Simple DOM counting after update:
-                setTimeout(() => {
-                    const tbody = document.getElementById(`table-${tab}-body`);
-                    if (tbody) {
-                        const count = tbody.querySelectorAll('tr.bet-row-1').length;
-                        // But "No bets found" row logic?
-                        // If "No bets history found" is present, count is 0.
-                        const noBets = tbody.innerText.includes("No bets history found");
-                        updateBadge(tab, noBets ? 0 : count);
-                    }
-                }, 100);
+                if (data.pagination) {
+                    tabPages[tab] = data.pagination.page;
+                    updateTabPagination(tab, data.pagination);
+                    updateBadge(tab, data.pagination.total_items);
+                }
             }
         } catch (e) {
             console.error(`Failed to refresh tab ${tab}:`, e);
