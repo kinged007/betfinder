@@ -35,7 +35,7 @@ class AnalyticsFilterSchema(BaseModel):
     min_prob: Optional[float] = None
     max_prob: Optional[float] = None
     
-    sort_by: Optional[str] = "placed_at"
+    sort_by: Optional[str] = "event_date"
     sort_desc: Optional[bool] = False
     
     page: Optional[int] = 1
@@ -133,11 +133,11 @@ async def analytics_data(
         query = query.where(Bet.market_key.in_(filters.markets))
 
     if filters.date_from:
-        query = query.where(Bet.placed_at >= filters.date_from)
+        query = query.where(Event.commence_time >= filters.date_from)
     if filters.date_to:
         # Include the entire end day by advancing to the start of the next day
         date_to_end = filters.date_to.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
-        query = query.where(Bet.placed_at < date_to_end)
+        query = query.where(Event.commence_time < date_to_end)
 
     # JSON Filters
     if filters.min_odds is not None:
@@ -158,7 +158,7 @@ async def analytics_data(
         query = query.where(cast(Bet.odd_data['implied_probability'], Float) <= filters.max_prob)
 
     # Ordering (Always Chronological for Chart)
-    query = query.order_by(Bet.settled_at.asc())
+    query = query.order_by(Event.commence_time.asc())
     
     result = await db.execute(query)
     bets = result.scalars().all()
@@ -227,8 +227,8 @@ async def analytics_data(
         net_pnl += pnl
         total_staked += bet.stake
         
-        # Aggregate daily PnL
-        ts = bet.settled_at if bet.settled_at else bet.placed_at
+        # Aggregate daily PnL by event date
+        ts = bet.event.commence_time if bet.event and bet.event.commence_time else (bet.settled_at or bet.placed_at)
         date_str = ts.strftime('%Y-%m-%d')
         daily_pnl[date_str] += pnl
         
