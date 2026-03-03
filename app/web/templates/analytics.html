@@ -390,6 +390,7 @@
     }
 
     function updateAnalytics() {
+        currentPage = 1;
         clearTimeout(analyticsTimeout);
         analyticsTimeout = setTimeout(fetchData, 500);
         updateFilterLabels();
@@ -427,7 +428,9 @@
             min_prob: document.getElementById('min-prob').value ? parseFloat(document.getElementById('min-prob').value) : null,
             max_prob: document.getElementById('max-prob').value ? parseFloat(document.getElementById('max-prob').value) : null,
             sort_by: currentSortBy,
-            sort_desc: currentSortDesc
+            sort_desc: currentSortDesc,
+            page: currentPage,
+            limit: limit
         };
 
         try {
