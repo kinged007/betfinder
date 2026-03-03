@@ -2,14 +2,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from starlette.requests import Request
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc, func, cast, Float, and_, or_
+from sqlalchemy import select, desc, func, cast, Float, and_, or_, distinct
 from sqlalchemy.orm import selectinload
 from app.api.deps import get_db
 from app.db.models import Bet, Bookmaker, Event, Preset, Sport, League
 from app.core.config import settings
 from app.core.security import check_session
 from typing import List, Optional
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pydantic import BaseModel
 from collections import defaultdict
 
@@ -35,7 +35,7 @@ class AnalyticsFilterSchema(BaseModel):
     min_prob: Optional[float] = None
     max_prob: Optional[float] = None
     
-    sort_by: Optional[str] = "settled_at"
+    sort_by: Optional[str] = "event_date"
     sort_desc: Optional[bool] = True
     
     page: Optional[int] = 1
@@ -45,10 +45,40 @@ class AnalyticsFilterSchema(BaseModel):
 async def analytics_view(request: Request, db: AsyncSession = Depends(get_db)):
     # Fetch filter options
     presets = (await db.execute(select(Preset).where(Preset.active == True))).scalars().all()
-    bookmakers = (await db.execute(select(Bookmaker).where(Bookmaker.active == True).order_by(Bookmaker.title))).scalars().all()
-    sports = (await db.execute(select(Sport).where(Sport.active == True).order_by(Sport.title))).scalars().all()
-    # Leagues could be many, maybe fetch on demand or top active ones? For now all active.
-    leagues = (await db.execute(select(League).where(League.active == True).order_by(League.title))).scalars().all()
+    
+    settled_statuses = ['won', 'lost', 'void']
+    
+    # Bookmakers: only those used in settled bets
+    bm_subq = select(distinct(Bet.bookmaker_id)).where(Bet.status.in_(settled_statuses))
+    bookmakers = (await db.execute(
+        select(Bookmaker)
+        .where(Bookmaker.id.in_(bm_subq))
+        .order_by(Bookmaker.title)
+    )).scalars().all()
+    
+    # Sports: only those present in settled bets (via event join)
+    sport_subq = (
+        select(distinct(Event.sport_key))
+        .join(Bet, Bet.event_id == Event.id)
+        .where(Bet.status.in_(settled_statuses))
+    )
+    sports = (await db.execute(
+        select(Sport)
+        .where(Sport.key.in_(sport_subq))
+        .order_by(Sport.title)
+    )).scalars().all()
+    
+    # Leagues: only those present in settled bets (via event join)
+    league_subq = (
+        select(distinct(Event.league_key))
+        .join(Bet, Bet.event_id == Event.id)
+        .where(Bet.status.in_(settled_statuses), Event.league_key.isnot(None))
+    )
+    leagues = (await db.execute(
+        select(League)
+        .where(League.key.in_(league_subq))
+        .order_by(League.title)
+    )).scalars().all()
     
     return templates.TemplateResponse(
         "analytics.html",
@@ -103,9 +133,11 @@ async def analytics_data(
         query = query.where(Bet.market_key.in_(filters.markets))
 
     if filters.date_from:
-        query = query.where(Bet.placed_at >= filters.date_from)
+        query = query.where(Event.commence_time >= filters.date_from)
     if filters.date_to:
-        query = query.where(Bet.placed_at <= filters.date_to)
+        # Include the entire end day by advancing to the start of the next day
+        date_to_end = filters.date_to.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+        query = query.where(Event.commence_time < date_to_end)
 
     # JSON Filters
     if filters.min_odds is not None:
@@ -126,7 +158,7 @@ async def analytics_data(
         query = query.where(cast(Bet.odd_data['implied_probability'], Float) <= filters.max_prob)
 
     # Ordering (Always Chronological for Chart)
-    query = query.order_by(Bet.settled_at.asc())
+    query = query.order_by(Event.commence_time.desc())
     
     result = await db.execute(query)
     bets = result.scalars().all()
@@ -195,8 +227,8 @@ async def analytics_data(
         net_pnl += pnl
         total_staked += bet.stake
         
-        # Aggregate daily PnL
-        ts = bet.settled_at if bet.settled_at else bet.placed_at
+        # Aggregate daily PnL by event date
+        ts = bet.event.commence_time if bet.event and bet.event.commence_time else (bet.settled_at or bet.placed_at)
         date_str = ts.strftime('%Y-%m-%d')
         daily_pnl[date_str] += pnl
         
