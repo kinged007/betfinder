@@ -36,7 +36,7 @@ class AnalyticsFilterSchema(BaseModel):
     max_prob: Optional[float] = None
     
     sort_by: Optional[str] = "event_date"
-    sort_desc: Optional[bool] = False
+    sort_desc: Optional[bool] = True
     
     page: Optional[int] = 1
     limit: Optional[int] = 50
@@ -158,7 +158,7 @@ async def analytics_data(
         query = query.where(cast(Bet.odd_data['implied_probability'], Float) <= filters.max_prob)
 
     # Ordering (Always Chronological for Chart)
-    query = query.order_by(Event.commence_time.asc())
+    query = query.order_by(Event.commence_time.desc())
     
     result = await db.execute(query)
     bets = result.scalars().all()
