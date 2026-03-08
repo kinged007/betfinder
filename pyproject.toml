@@ -27,7 +27,13 @@ dev = [
     "pystray>=0.19.5",
     "pillow>=10.0.0",
     "pyinstaller>=6.0.0",
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "aiosqlite>=0.22.1",
 ]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
 
 [build-system]
 requires = ["hatchling"]

@@ -237,7 +237,7 @@ class TradeFinderService:
                     select(Bookmaker).where(Bookmaker.key == bookmaker_key)
                 )
                 bookmaker_model = result.scalar_one_or_none()
-                if not bookmaker_model or not bookmaker_model.config:
+                if not bookmaker_model:
                     continue
                 
                 # Initialize bookmaker instance
@@ -293,6 +293,9 @@ class TradeFinderService:
             
             if not raw_odds:
                 print(f"DEBUG: No odds returned for {bookmaker_model.key} / {league_key}")
+                # MUST record sync even on failure/empty so circuit breaker trips and prevents infinite loops
+                for event_id in event_ids:
+                    bookmaker_instance.record_sync(event_id)
                 return 0
             
             print(f"DEBUG: {bookmaker_model.key} returned {len(raw_odds)} odds entries for {league_key}")
@@ -340,14 +343,24 @@ class TradeFinderService:
                 
                 new_price = entry.get("price")
                 new_point = entry.get("point")
+                norm_sel = entry.get("normalized_selection")
                 
-                # Try finding existing record
-                odds_record = lookup_map.get((ext_event_id, mkt_key, sel))
+                # Try finding existing record (Priority 1: Normalized string. Priority 2: Exact string)
+                odds_record = lookup_map.get((ext_event_id, mkt_key, norm_sel)) if norm_sel else None
+                if not odds_record:
+                    odds_record = lookup_map.get((ext_event_id, mkt_key, sel))
+                
+                if not odds_record:
+                    # Try looking up without case sensitivity or whitespace difference just to debug
+                    logger.info(f"DEBUG: MISSING MATCH FOR {(ext_event_id, mkt_key, sel)}. Map keys follow:")
+                    for k in lookup_map.keys():
+                        if k[0] == ext_event_id and k[1] == mkt_key:
+                            logger.debug(f"  -> Avail map key: {k}")
                 
                 if odds_record:
                     # Debug log significant changes or specific event updates
                     if abs(odds_record.price - new_price) > 0.001:
-                        print(f"DEBUG: Updating price {ext_event_id}/{mkt_key}/{sel}: {odds_record.price} -> {new_price}")
+                        logger.info(f"DEBUG: Updating price {ext_event_id}/{mkt_key}/{sel}: {odds_record.price} -> {new_price}")
                     
                     # Update fields
                     odds_record.price = new_price
@@ -405,11 +418,6 @@ class TradeFinderService:
             # because sync_bookmaker_odds commits the session.
             bm = await db.get(Bookmaker, bm_id)
             if not bm:
-                continue
-                
-            # Additional check for config
-            if not bm.config:
-                logger.warning(f"Skipping bookmaker {bm.title} ({bm.key}) due to missing/empty config.")
                 continue
                 
             try:

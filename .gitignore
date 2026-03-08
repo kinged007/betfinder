@@ -28,3 +28,7 @@ packages
 
 # Inno Setup generated script
 betfinder_installer.iss
+
+
+# AI
+.omc/

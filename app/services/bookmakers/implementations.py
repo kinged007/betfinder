@@ -5,6 +5,7 @@ from app.db.models import Bet
 
 from app.services.bookmakers.smarkets import SmarketsBookmaker
 from app.services.bookmakers.sx_bet import SXBetBookmaker
+from app.services.bookmakers.kalshi import KalshiBookmaker
 
 # class BetfairExEUBookmaker(APIBookmaker):
 #     name = "betfair_ex_eu"
@@ -23,6 +24,7 @@ from app.services.bookmakers.sx_bet import SXBetBookmaker
 # Register all
 BookmakerFactory.register("smarkets", SmarketsBookmaker)
 BookmakerFactory.register("sx_bet", SXBetBookmaker)
+BookmakerFactory.register("kalshi", KalshiBookmaker)
 # BookmakerFactory.register("betfair_ex_eu", BetfairExEUBookmaker)
 # BookmakerFactory.register("sportmarket", SportmarketBookmaker)
 BookmakerFactory.register("pinnacle", SimpleBookmaker) # Benchmark only usually
