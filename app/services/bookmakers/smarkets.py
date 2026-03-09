@@ -7,6 +7,7 @@ from app.db.models import Odds, Market, Event
 from sqlalchemy import select, update
 from sqlalchemy.orm import joinedload
 from app.db.models import Bet
+from app.domain.schemas import BetSlip
 
 
 class SmarketsBookmaker(APIBookmaker):
@@ -518,7 +519,7 @@ class SmarketsBookmaker(APIBookmaker):
         res = await db.execute(select(Bookmaker.id).where(Bookmaker.key == self.name))
         return res.scalar() or 0
 
-    async def place_bet(self, bet: Bet) -> Dict[str, Any]:
+    async def place_bet(self, bet: Bet) -> BetSlip:
         """
         Simulate placing a bet on Smarkets.
         
@@ -531,13 +532,14 @@ class SmarketsBookmaker(APIBookmaker):
         # simulated_id = f"SIMULATED-{uuid.uuid4().hex[:12].upper()}"
         simulated_id = None # We leave it empty, since we don't have access to Smarkets API. Leaving it empty will force the model to obtain the results in another way.
         
-        return {
-            "success": True,
-            "status": "auto",
-            "bet_id": simulated_id,
-            "external_id": simulated_id,
-            "message": f"Simulated bet placement (Smarkets API closed to new customers). Bet ID: {simulated_id}"
-        }
+        return BetSlip(
+            status="success",
+            external_id=simulated_id,
+            status_message=f"Simulated bet placement (Smarkets API closed to new customers). Bet ID: {simulated_id}",
+            placed_at=datetime.now(timezone.utc),
+            executed_stake=bet.stake,
+            executed_price=bet.price
+        )
 
     async def get_order_status(self, external_id: str) -> Dict[str, Any]:
         """Check status of a Smarkets order."""

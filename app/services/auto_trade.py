@@ -392,23 +392,23 @@ class AutoTradeService:
                 
                 logger.info(f"Bet placement API response: {result}")
                 
-                if result.get("success"):
+                if result.status in ("success", "pending"):
                     # Update bet with response data
                     bet.status = "placed"
-                    bet.external_id = result.get("bet_id")
+                    bet.external_id = result.external_id
                     
                     # Save bet to database
                     db.add(bet)
                     
                     # Deduct stake from bookmaker balance
-                    bookmaker.balance -= stake
+                    bookmaker.balance -= result.executed_stake or stake
                     
                     await db.commit()
                     await db.refresh(bet)
                     
                     logger.info(f"✅ Bet placed successfully. Bet ID: {bet.id}, Bookmaker Bet ID: {bet.external_id}")
                 else:
-                    error_msg = result.get('error') or result.get('message') or 'Unknown error'
+                    error_msg = result.status_message or 'Unknown error'
                     logger.warning(f"❌ Bet placement failed: {error_msg}")
                     logger.debug(f"Full response: {result}")
                     return False

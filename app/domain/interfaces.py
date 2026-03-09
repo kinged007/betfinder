@@ -3,6 +3,7 @@ from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from app.db.models import Sport, League, Event, Odds, Bet
+from app.domain.schemas import BetSlip
 
 class AbstractBookmaker(ABC):
     name: str = ""
@@ -37,7 +38,7 @@ class AbstractBookmaker(ABC):
         pass
 
     @abstractmethod
-    async def place_bet(self, bet: Bet) -> Dict[str, Any]:
+    async def place_bet(self, bet: Bet) -> BetSlip:
         """Place a bet on the bookmaker."""
         pass
 

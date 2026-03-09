@@ -308,7 +308,7 @@ class TradeFinderService:
             print(f"DEBUG: Updating odds for events: {received_event_ids}")
             
             stmt = (
-                select(Odds, Market.event_id, Market.key)
+                select(Odds, Market.id, Market.event_id, Market.key)
                 .join(Market).join(Event)
                 .where(
                     Event.id.in_(received_event_ids),
@@ -318,6 +318,18 @@ class TradeFinderService:
             res = await db.execute(stmt)
             existing_rows = res.all()
             print(f"DEBUG: Found {len(existing_rows)} existing odds rows in DB for these events.")
+
+            # Build a market lookup: (event_id, market_key) -> market_id
+            # so we can create new Odds rows for missing selections.
+            # We query ALL markets for these events (not just those with existing odds for this bookmaker)
+            # because a market may exist but have zero rows for this bookmaker yet.
+            market_id_lookup: Dict[tuple, int] = {}
+            mkt_stmt = select(Market.id, Market.event_id, Market.key).where(
+                Market.event_id.in_(received_event_ids)
+            )
+            mkt_res = await db.execute(mkt_stmt)
+            for mkt_id, ev_id, mkt_key in mkt_res.all():
+                market_id_lookup[(ev_id, mkt_key)] = mkt_id
             
             # Build Lookup Map
             # Keys: (ext_event_id, market_key, normalized_selection) -> Odds Object
@@ -328,14 +340,27 @@ class TradeFinderService:
             # (ev, mkt, norm_sel) -> Odd
             
             lookup_map = {}
-            for odd, ev_id, mkt_key in existing_rows:
-                # Key 1: Normalized
-                if odd.normalized_selection:
-                    lookup_map[(ev_id, mkt_key, odd.normalized_selection)] = odd
-                # Key 2: Exact
-                lookup_map[(ev_id, mkt_key, odd.selection)] = odd
+            lookup_map_multi = {}
+            for odd, _mkt_id, ev_id, mkt_key in existing_rows:
+                # Store by SID if available
+                if odd.sid:
+                    lookup_map[(ev_id, mkt_key, f"sid_{odd.sid}")] = odd
+                
+                # Store grouped by selection
+                key_norm = (ev_id, mkt_key, odd.normalized_selection) if odd.normalized_selection else None
+                key_exact = (ev_id, mkt_key, odd.selection)
+                
+                if key_norm:
+                    if key_norm not in lookup_map_multi:
+                        lookup_map_multi[key_norm] = []
+                    lookup_map_multi[key_norm].append(odd)
+                
+                if key_exact not in lookup_map_multi:
+                    lookup_map_multi[key_exact] = []
+                lookup_map_multi[key_exact].append(odd)
             
             total_updated = 0
+            created_keys: set = set()  # Track newly inserted (ev, mkt, norm_sel, point) to avoid duplicates
             for entry in raw_odds:
                 ext_event_id = entry.get("external_event_id")
                 mkt_key = entry.get("market_key")
@@ -345,17 +370,67 @@ class TradeFinderService:
                 new_point = entry.get("point")
                 norm_sel = entry.get("normalized_selection")
                 
-                # Try finding existing record (Priority 1: Normalized string. Priority 2: Exact string)
-                odds_record = lookup_map.get((ext_event_id, mkt_key, norm_sel)) if norm_sel else None
+                odds_record = None
+                
+                # Priority 1: Match by SID
+                if entry.get("sid"):
+                    odds_record = lookup_map.get((ext_event_id, mkt_key, f"sid_{entry['sid']}"))
+                
+                # Priority 2: Match by Selection (with disambiguation logic)
                 if not odds_record:
-                    odds_record = lookup_map.get((ext_event_id, mkt_key, sel))
+                    candidates = lookup_map_multi.get((ext_event_id, mkt_key, norm_sel)) if norm_sel else None
+                    if not candidates:
+                        candidates = lookup_map_multi.get((ext_event_id, mkt_key, sel))
+                    
+                    if candidates:
+                        if len(candidates) == 1:
+                            # Only one candidate, safe to update even if point shifted
+                            odds_record = candidates[0]
+                        else:
+                            # Multiple candidates (e.g. alternative spreads/limit orders)
+                            # Must disambiguate by point
+                            if new_point is not None:
+                                # Find exact point match
+                                for c in candidates:
+                                    if c.point == new_point:
+                                        odds_record = c
+                                        break
+                                # If point shifted and we have multiple lines, we can't safely guess which one shifted.
+                                # It's safer to skip update and let the main ingester insert/handle the shifted lines.
+                            else:
+                                # Fallback: just take the first if there are no points to differentiate
+                                odds_record = candidates[0]
                 
                 if not odds_record:
-                    # Try looking up without case sensitivity or whitespace difference just to debug
-                    logger.info(f"DEBUG: MISSING MATCH FOR {(ext_event_id, mkt_key, sel)}. Map keys follow:")
-                    for k in lookup_map.keys():
-                        if k[0] == ext_event_id and k[1] == mkt_key:
-                            logger.debug(f"  -> Avail map key: {k}")
+                    # The bookmaker has data for this selection but we have no existing row.
+                    # Look up the market and insert a new Odds row.
+                    market_id = market_id_lookup.get((ext_event_id, mkt_key))
+                    insert_key = (ext_event_id, mkt_key, norm_sel or sel, new_point)
+                    if market_id and insert_key not in created_keys:
+                        new_odds = Odds(
+                            market_id=market_id,
+                            bookmaker_id=bookmaker_model.id,
+                            selection=sel or norm_sel or "",
+                            normalized_selection=norm_sel or sel or "",
+                            price=new_price,
+                            point=new_point,
+                            implied_probability=round(1 / new_price, 6) if new_price else None,
+                            sid=entry.get("sid"),
+                            market_sid=entry.get("market_sid"),
+                            event_sid=entry.get("event_sid"),
+                        )
+                        db.add(new_odds)
+                        created_keys.add(insert_key)
+                        total_updated += 1
+                        logger.info(
+                            f"CREATED new odds row: event={ext_event_id} market={mkt_key} "
+                            f"selection={norm_sel} price={new_price} point={new_point} sid={entry.get('sid')}"
+                        )
+                    elif not market_id:
+                        logger.warning(
+                            f"MISSING MATCH (no market found): {(ext_event_id, mkt_key, sel, new_point)}. "
+                            f"Cannot insert — market does not exist in DB for this event."
+                        )
                 
                 if odds_record:
                     # Debug log significant changes or specific event updates

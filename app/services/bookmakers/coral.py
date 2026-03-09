@@ -9,6 +9,7 @@ from sqlalchemy.orm import joinedload
 from app.core.enums import BetResult
 from app.services.bookmakers.base import APIBookmaker
 from app.db.models import Bet, Odds, Market, Event, Bookmaker
+from app.domain.schemas import BetSlip
 
 class CoralBookmakerSimulator(APIBookmaker):
     name = "coral"
@@ -110,19 +111,20 @@ class CoralBookmakerSimulator(APIBookmaker):
         
         return results
 
-    async def place_bet(self, bet: Bet) -> Dict[str, Any]:
+    async def place_bet(self, bet: Bet) -> BetSlip:
         """
         Simulate placing a bet.
         """
         simulated_id = f"CORAL-SIM-{uuid.uuid4().hex[:8].upper()}"
         
-        return {
-            "success": True,
-            "status": "auto",
-            "bet_id": simulated_id,
-            "external_id": simulated_id,
-            "message": f"Simulated bet placement on Coral. ID: {simulated_id}"
-        }
+        return BetSlip(
+            status="success",
+            external_id=simulated_id,
+            status_message=f"Simulated bet placement on Coral. ID: {simulated_id}",
+            placed_at=datetime.now(timezone.utc),
+            executed_stake=bet.stake,
+            executed_price=bet.price
+        )
 
     async def get_order_status(self, external_id: str) -> Dict[str, Any]:
         """

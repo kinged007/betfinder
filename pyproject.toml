@@ -1,6 +1,6 @@
 [project]
 name = "betfinder"
-version = "0.1.0"
+version = "0.1.2"
 description = "BetFinder is a desktop/hosted application that helps you find the best odds for your bets."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -20,6 +20,7 @@ dependencies = [
     "uvicorn>=0.40.0",
     "websockets>=16.0",
     "asyncpg>=0.30.0",
+    "cryptography>=42.0.0",
 ]
 
 [dependency-groups]

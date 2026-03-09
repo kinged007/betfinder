@@ -10,16 +10,16 @@ from app.services.bookmakers.kalshi import KalshiBookmaker
 # class BetfairExEUBookmaker(APIBookmaker):
 #     name = "betfair_ex_eu"
 #     title = "Betfair Exchange EU"
-#     async def place_bet(self, bet: Bet) -> Dict[str, Any]:
+#     async def place_bet(self, bet: Bet) -> "BetSlip":
 #         # TODO: Implement Betfair API bet placement
-#         return {"status": "pending", "external_id": "mock_betfair_id", "message": "Bet placed on Betfair (Mock)"}
+#         return BetSlip(status="pending", external_id="mock_betfair_id", status_message="Bet placed on Betfair (Mock)", placed_at=datetime.now(timezone.utc), executed_stake=bet.stake, executed_price=bet.price)
 
 # class SportmarketBookmaker(APIBookmaker):
 #     name = "sportmarket"
 #     title = "Sportmarket"
-#     async def place_bet(self, bet: Bet) -> Dict[str, Any]:
+#     async def place_bet(self, bet: Bet) -> "BetSlip":
 #         # TODO: Implement Sportmarket API bet placement
-#         return {"status": "pending", "external_id": "mock_sportmarket_id", "message": "Bet placed on Sportmarket (Mock)"}
+#         return BetSlip(status="pending", external_id="mock_sportmarket_id", status_message="Bet placed on Sportmarket (Mock)", placed_at=datetime.now(timezone.utc), executed_stake=bet.stake, executed_price=bet.price)
 
 # Register all
 BookmakerFactory.register("smarkets", SmarketsBookmaker)

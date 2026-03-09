@@ -158,3 +158,11 @@ class BetRead(BetBase):
     odd_data: Optional[dict] = None
     
     model_config = ConfigDict(from_attributes=True)
+
+class BetSlip(BaseModel):
+    status: str
+    external_id: Optional[str] = None
+    status_message: str
+    placed_at: datetime
+    executed_stake: float
+    executed_price: float

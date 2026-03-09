@@ -327,6 +327,18 @@ function openBetModal(item) {
 
     recalculateEdge();
     const modal = document.getElementById('bet-modal');
+
+    const autoPlaceContainer = document.getElementById('modal-auto-place-container');
+    const autoPlaceToggle = document.getElementById('modal-auto-place');
+    if (autoPlaceContainer) {
+        if (item.bookmaker_key) {
+            autoPlaceContainer.classList.remove('hidden');
+        } else {
+            autoPlaceContainer.classList.add('hidden');
+            if (autoPlaceToggle) autoPlaceToggle.checked = false;
+        }
+    }
+
     if (modal) modal.showModal();
 }
 
@@ -338,6 +350,7 @@ async function submitBet() {
     const price = parseFloat(document.getElementById('modal-odds').value);
     const stake = parseFloat(document.getElementById('modal-stake').value);
     const trueOdds = parseFloat(document.getElementById('modal-true-odds').value);
+    const autoTrade = document.getElementById('modal-auto-place')?.checked || false;
 
     // Get Preset ID
     let currentPresetId = null;
@@ -355,7 +368,8 @@ async function submitBet() {
         price: price,
         stake: stake,
         true_odds: trueOdds,
-        preset_id: parseInt(currentPresetId)
+        preset_id: parseInt(currentPresetId),
+        auto_trade: autoTrade
     };
 
     try {
@@ -381,7 +395,37 @@ async function submitBet() {
 
         } else {
             const error = await response.json();
-            const msg = `Error: ${error.detail || 'Failed to register trade'}`;
+
+            // Handle custom PRICE_CHANGED errors
+            if (error.detail && typeof error.detail === 'object' && error.detail.code === "PRICE_CHANGED") {
+                const msg = error.detail.message;
+                if (typeof showToast === 'function') {
+                    showToast(msg, 'warning');
+                } else {
+                    alert(msg);
+                }
+
+                if (error.detail.new_price) {
+                    const oddsInput = document.getElementById('modal-odds');
+                    if (oddsInput) {
+                        oddsInput.value = error.detail.new_price;
+                        recalculateEdge();
+                    }
+                }
+                return; // Do NOT close the modal, allow user to click register again
+            }
+
+            // Normal error fallback
+            let errorMsg = 'Failed to register trade';
+            if (typeof error.detail === 'string') {
+                errorMsg = error.detail;
+            } else if (error.detail && Array.isArray(error.detail)) {
+                errorMsg = error.detail.map(e => e.msg).join(', ');
+            } else if (error.detail && error.detail.message) {
+                errorMsg = error.detail.message;
+            }
+
+            const msg = `Error: ${errorMsg}`;
             if (typeof showToast === 'function') showToast(msg, "error");
             else alert(msg);
         }

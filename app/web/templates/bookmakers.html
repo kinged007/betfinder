@@ -145,6 +145,11 @@
                         <input type="checkbox" id="field_${field.name}" class="checkbox checkbox-primary" ${val ? 'checked' : ''} onchange="validateCredentials()" />
                     </label>
                 `;
+            } else if (field.type === 'textarea') {
+                inputHtml = `
+                    <label class="label"><span class="label-text text-sm md:text-base">${field.label}</span></label>
+                    <textarea id="field_${field.name}" class="textarea textarea-bordered h-24 font-mono text-xs w-full" oninput="validateCredentials()">${val}</textarea>
+                `;
             } else {
                 const type = field.type === 'password' ? 'password' : (field.type === 'int' || field.type === 'float' ? 'number' : 'text');
                 const step = field.type === 'float' ? 'step="0.01"' : '';

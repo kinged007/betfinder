@@ -11,6 +11,7 @@ from app.domain.interfaces import AbstractBookmaker
 from app.core.enums import BetResult, BetStatus
 from app.db.models import Bet, Mapping, League
 from app.schemas.odds import OddsEvent, OddsSport
+from app.domain.schemas import BetSlip
 
 # --- Fuzzy Matching Helpers ---
 
@@ -117,8 +118,8 @@ class SimpleBookmaker(AbstractBookmaker):
         """
         return []
 
-    async def place_bet(self, bet: Bet) -> Dict[str, Any]:
-        return {"status": "error", "message": "Placing bets not supported by SimpleBookmaker"}
+    async def place_bet(self, bet: Bet) -> BetSlip:
+        return BetSlip(status="error", status_message="Placing bets not supported by SimpleBookmaker", placed_at=datetime.now(timezone.utc), executed_stake=0.0, executed_price=0.0)
 
     async def get_account_balance(self) -> Dict[str, Any]:
         return {"balance": 0.0, "currency": "USD"}
@@ -406,7 +407,7 @@ class APIBookmaker(SimpleBookmaker):
         schema.extend([
             {"name": "username", "label": "Username", "type": "str"},
             {"name": "password", "label": "Password", "type": "password"},
-            {"name": "api_token", "label": "API Token", "type": "password"},
+            {"name": "api_token", "label": "API Token/API Key", "type": "password"},
             {"name": "has_2fa", "label": "Has 2FA", "type": "bool", "default": False},
             {"name": "bet_delay_seconds", "label": "Auto-Bet Delay (Seconds)", "type": "int", "default": 30},
             {"name": "currency", "label": "Currency", "type": "str", "default": "USD"},

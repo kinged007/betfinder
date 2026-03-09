@@ -164,7 +164,8 @@ class ConnectionManager:
                             new_cache = {}
 
                             for opp in opportunities:
-                                opp_key = f"{opp.event.id}_{opp.bookmaker.key}_{opp.market.key}_{opp.odd.normalized_selection}"
+                                point_str = f"_{opp.odd.point}" if opp.odd.point is not None else ""
+                                opp_key = f"{opp.event.id}_{opp.bookmaker.key}_{opp.market.key}_{opp.odd.normalized_selection}{point_str}"
                                 current_price = opp.odd.price
                                 
                                 # Check changes

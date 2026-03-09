@@ -477,6 +477,7 @@ class ManualBetRequest(BaseModel):
     stake: float
     true_odds: float
     preset_id: Optional[int] = None
+    auto_trade: bool = False
 
 @router.post("/trade-feed/bet")
 async def register_manual_bet(
@@ -496,10 +497,6 @@ async def register_manual_bet(
         
     if not bm:
         raise HTTPException(status_code=400, detail=f"Bookmaker '{bet_in.bookmaker}' not found")
-
-    # Update balance (Manual bet, no check required as per user request)
-    bm.balance -= bet_in.stake
-    db.add(bm)
 
     # Fetch Snapshot Data
     # Fetch Event
@@ -572,6 +569,54 @@ async def register_manual_bet(
     db.add(new_bet)
     await db.commit()
     await db.refresh(new_bet)
+    
+    # Auto Trade Execution
+    if bet_in.auto_trade and bm.model_type != 'simple':
+        from app.services.bookmakers.base import BookmakerFactory
+        bm_service = BookmakerFactory.get_bookmaker(bm.key, config=bm.config or {}, db=db)
+        try:
+            place_res = await bm_service.place_bet(new_bet)
+            
+            if place_res.status == "price_changed":
+                await db.rollback()
+                raise HTTPException(
+                    status_code=409, 
+                    detail={
+                        "code": "PRICE_CHANGED", 
+                        "message": place_res.status_message, 
+                        "new_price": place_res.executed_price
+                    }
+                )
+                
+            if place_res.status in ("success", "pending"):
+                new_bet.status = BetStatus.OPEN.value
+                new_bet.external_id = place_res.external_id
+                
+                # Update stake and price based on exact execution
+                actual_stake = place_res.executed_stake or bet_in.stake
+                new_bet.stake = actual_stake
+                
+                if place_res.executed_price:
+                    new_bet.price = place_res.executed_price
+                
+                bm.balance -= actual_stake
+                db.add(bm)
+                await db.commit()
+            else:
+                new_bet.status = "error"
+                await db.commit()
+                return {"status": "error", "message": f"API Placement Failed: {place_res.status_message}"}
+        except HTTPException:
+            raise
+        except Exception as e:
+            new_bet.status = "error"
+            await db.commit()
+            return {"status": "error", "message": f"API Exception: {str(e)}"}
+    else:
+        # Manual logging just deducts balance
+        bm.balance -= bet_in.stake
+        db.add(bm)
+        await db.commit()
     
     # Send Notification if preset attached
     if bet_in.preset_id:

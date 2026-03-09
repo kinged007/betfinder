@@ -115,7 +115,12 @@ class DataIngester:
             
             # Ensure Sport Exists
             existing_sport = await self.sport_repo.get(db, sport_key)
-            if not existing_sport:
+            if existing_sport:
+                await self.sport_repo.update(db, db_obj=existing_sport, obj_in={
+                    "active": True,
+                    "updated_at": datetime.now(timezone.utc)
+                })
+            else:
                 logger.debug(f"Creating new sport: {sport_key}")
                 existing_sport = await self.sport_repo.create(db, obj_in={
                     "key": sport_key,
