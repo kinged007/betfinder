@@ -17,6 +17,8 @@ router = APIRouter(dependencies=[Depends(check_session)])
 templates = Jinja2Templates(directory="app/web/templates")
 
 _UNKNOWN_GROUP_KEY = '__unknown__'
+_MAX_COMBO_CHART_LINES = 20
+_COMBO_KEY_SEP = '|'
 
 class AnalyticsFilterSchema(BaseModel):
     presets: Optional[List[int]] = []
@@ -166,8 +168,13 @@ async def analytics_data(
     bets = result.scalars().all()
 
     # Determine chart grouping mode
-    use_league_groups = bool(filters.leagues)
-    use_bm_groups = bool(filters.bookmakers) and not use_league_groups
+    has_leagues = bool(filters.leagues)
+    has_bookmakers = bool(filters.bookmakers)
+    # When both are selected, show league×bookmaker combos unless that exceeds 20 lines,
+    # in which case fall back to per-league grouping (all bookmakers merged per league).
+    use_combo_groups = has_leagues and has_bookmakers and (len(filters.leagues) * len(filters.bookmakers) <= _MAX_COMBO_CHART_LINES)
+    use_league_groups = has_leagues and not use_combo_groups
+    use_bm_groups = has_bookmakers and not has_leagues
 
     # Calculate Bankroll over time
     chart_data = []
@@ -243,7 +250,20 @@ async def analytics_data(
         daily_pnl[date_str] += pnl
 
         # Track per-group daily PnL for multi-line chart
-        if use_league_groups:
+        if use_combo_groups:
+            league_key = (bet.event.league_key if bet.event and bet.event.league_key else _UNKNOWN_GROUP_KEY)
+            bm_key = str(bet.bookmaker_id)
+            g_key = f"{league_key}{_COMBO_KEY_SEP}{bm_key}"
+            if g_key not in group_labels:
+                league_label = (
+                    bet.event.league.title
+                    if bet.event and bet.event.league
+                    else (league_key if league_key != _UNKNOWN_GROUP_KEY else 'Unknown')
+                )
+                bm_label = bet.bookmaker.title if bet.bookmaker else bm_key
+                group_labels[g_key] = f"{league_label} / {bm_label}"
+            group_daily_pnl[g_key][date_str] += pnl
+        elif use_league_groups:
             g_key = (bet.event.league_key if bet.event and bet.event.league_key else _UNKNOWN_GROUP_KEY)
             if g_key not in group_labels:
                 if bet.event and bet.event.league:
@@ -284,7 +304,7 @@ async def analytics_data(
         })
 
     # Build multi-line chart datasets
-    if use_league_groups or use_bm_groups:
+    if use_combo_groups or use_league_groups or use_bm_groups:
         chart_datasets = []
         for g_key, label in group_labels.items():
             cumulative = 0.0
