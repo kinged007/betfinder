@@ -16,6 +16,8 @@ from collections import defaultdict
 router = APIRouter(dependencies=[Depends(check_session)])
 templates = Jinja2Templates(directory="app/web/templates")
 
+_UNKNOWN_GROUP_KEY = '__unknown__'
+
 class AnalyticsFilterSchema(BaseModel):
     presets: Optional[List[int]] = []
     bookmakers: Optional[List[int]] = []
@@ -162,11 +164,19 @@ async def analytics_data(
     
     result = await db.execute(query)
     bets = result.scalars().all()
-    
+
+    # Determine chart grouping mode
+    use_league_groups = bool(filters.leagues)
+    use_bm_groups = bool(filters.bookmakers) and not use_league_groups
+
     # Calculate Bankroll over time
     chart_data = []
     daily_pnl = defaultdict(float)
-    
+
+    # Per-group tracking for multi-line chart
+    group_daily_pnl: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
+    group_labels: dict[str, str] = {}
+
     # Calculate Starting Balance from filtered bookmakers
     total_starting_balance = 0.0
     
@@ -231,7 +241,22 @@ async def analytics_data(
         ts = bet.event.commence_time if bet.event and bet.event.commence_time else (bet.settled_at or bet.placed_at)
         date_str = ts.strftime('%Y-%m-%d')
         daily_pnl[date_str] += pnl
-        
+
+        # Track per-group daily PnL for multi-line chart
+        if use_league_groups:
+            g_key = (bet.event.league_key if bet.event and bet.event.league_key else _UNKNOWN_GROUP_KEY)
+            if g_key not in group_labels:
+                if bet.event and bet.event.league:
+                    group_labels[g_key] = bet.event.league.title
+                else:
+                    group_labels[g_key] = g_key if g_key != _UNKNOWN_GROUP_KEY else 'Unknown'
+            group_daily_pnl[g_key][date_str] += pnl
+        elif use_bm_groups:
+            g_key = str(bet.bookmaker_id)
+            if g_key not in group_labels:
+                group_labels[g_key] = bet.bookmaker.title if bet.bookmaker else g_key
+            group_daily_pnl[g_key][date_str] += pnl
+
         rows_html_data.append(bet)
 
     # Build Chart Data from Aggregated Daily PnL
@@ -257,6 +282,20 @@ async def analytics_data(
             'y': round(cumulative_balance, 2),
             'pnl': round(day_pnl, 2)
         })
+
+    # Build multi-line chart datasets
+    if use_league_groups or use_bm_groups:
+        chart_datasets = []
+        for g_key, label in group_labels.items():
+            cumulative = 0.0
+            data = []
+            for date_str in sorted(group_daily_pnl[g_key].keys()):
+                day_pnl = group_daily_pnl[g_key][date_str]
+                cumulative += day_pnl
+                data.append({'x': date_str, 'y': round(cumulative, 2), 'pnl': round(day_pnl, 2)})
+            chart_datasets.append({'label': label, 'data': data})
+    else:
+        chart_datasets = [{'label': 'Bankroll', 'data': chart_data}]
         
     # Python Sort for Table Display
     def get_sort_key(b):
@@ -314,6 +353,7 @@ async def analytics_data(
 
     return {
         "chart_data": chart_data,
+        "chart_datasets": chart_datasets,
         "table_html": table_content,
         "stats": stats,
         "pagination": {
