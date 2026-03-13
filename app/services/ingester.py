@@ -4,7 +4,7 @@ import logging
 import hashlib
 from typing import List, Optional, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete, and_
+from sqlalchemy import select, delete, and_, func
 from app.services.the_odds_api import TheOddsAPIClient
 from app.services.standardizer import DataStandardizer
 from app.db.models import Sport, League, Event, Market, Odds, Bookmaker, Mapping
@@ -118,7 +118,7 @@ class DataIngester:
             if existing_sport:
                 await self.sport_repo.update(db, db_obj=existing_sport, obj_in={
                     "active": True,
-                    "updated_at": datetime.now(timezone.utc)
+                    "updated_at": func.now()
                 })
             else:
                 logger.debug(f"Creating new sport: {sport_key}")
