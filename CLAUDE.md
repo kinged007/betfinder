@@ -30,5 +30,5 @@ Manual health check against a running server: `uv run python tests/verify.py` (e
 
 ## Permissions
 
-- Do not publish anything derived from the private `tenantflex` org. See workspace `docs/03-tenantflex.md` (not in this repo).
+- Keep this repo self-contained. Do not add network calls in tests; mock external services.
 - Never commit secrets or `.env` files. `sample.env` holds placeholders only.
