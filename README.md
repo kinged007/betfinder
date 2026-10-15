@@ -9,9 +9,6 @@ Find and track value bets across bookmakers — FastAPI + SQLAlchemy with odds a
 
 BetFinder ingests odds from multiple bookmakers (The Odds API, Kalshi, Smarkets, SX Bet and others), normalises them, runs value analysis against configurable presets, and surfaces opportunities on a live dashboard. Bets are tracked through their full lifecycle (pending → open → won/lost/void) with Telegram notifications and optional auto-trade execution.
 
-![Dashboard screenshot](./docs/screenshot.png)
-*Screenshot to be added — dashboard at `http://localhost:8000` after `uv run dev`.*
-
 ## Install
 
 Requires Python 3.12+ and [uv](https://github.com/astral-sh/uv).
